@@ -10,6 +10,7 @@ Import DOCX course outlines straight into MasterStudy LMS. Upload a Word documen
 - **Quiz conversion** – "Test" sections are automatically converted to MasterStudy quizzes, keeping all detected questions and attaching the quiz at the end of the corresponding section.
 - **Lesson title templating** – Customize how lesson titles are generated with placeholders such as `%module_index%`, `%lesson_index%`, `%module_title%`, or `%lesson_source_title%`.
 - **Page skipping** – Start parsing from a specific page so front matter, cover pages, or lengthy introductions are ignored.
+- **Rich lesson content** – Preserve hyperlinks, embedded media, and inline images from the original DOCX file when lessons are created.
 
 ## Usage
 

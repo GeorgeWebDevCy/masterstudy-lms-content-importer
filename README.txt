@@ -4,7 +4,7 @@ Donate link: https://www.georgenicolaou.me/
 Tags: lms, masterstudy, course import, docx, education
 Requires at least: 5.8
 Tested up to: 6.5
-Stable tag: 1.12.4
+Stable tag: 1.13.0
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -51,6 +51,11 @@ The importer renames them to quizzes, migrates detected questions, and attaches 
 
 == Changelog ==
 
+= 1.13.0 =
+* Preserve hyperlinks from DOCX lessons when creating MasterStudy posts.
+* Import embedded media references (YouTube, Vimeo, and other supported providers) directly into lesson content.
+* Attach lesson images discovered in DOCX content to their respective lessons.
+
 = 1.12.4 =
 * Bump plugin version.
 
@@ -68,6 +73,9 @@ The importer renames them to quizzes, migrates detected questions, and attaches 
 * Added page skip option and improved quiz title conversion.
 
 == Upgrade Notice ==
+
+= 1.13.0 =
+Adds hyperlink, embedded media, and inline image support when importing DOCX lessons—update to keep multimedia content intact.
 
 = 1.12.4 =
 Version bump only.
