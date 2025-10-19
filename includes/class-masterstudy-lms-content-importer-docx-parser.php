@@ -752,33 +752,134 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 	 *
 	 * @return string
 	 */
-	private function format_block( array $lines ): string {
-		if ( empty( $lines ) ) {
-			return '';
-		}
+       private function format_block( array $lines ): string {
+               if ( empty( $lines ) ) {
+                       return '';
+               }
 
-                $text = trim( implode( "\n\n", $lines ) );
+               $processed_lines = array();
 
-                if ( '' === $text ) {
-                        return '';
-                }
+               foreach ( $lines as $line ) {
+                       $prepared = $this->prepare_block_line( $line );
 
-                if ( function_exists( 'wpautop' ) ) {
-                        $html = wpautop( $text );
-                } else {
-                        $html = '<p>' . nl2br( $text ) . '</p>';
-                }
+                       if ( '' !== $prepared ) {
+                               $processed_lines[] = $prepared;
+                       }
+               }
 
-                if ( function_exists( 'wp_kses_post' ) ) {
-                        return wp_kses_post( $html );
-                }
+               if ( empty( $processed_lines ) ) {
+                       return '';
+               }
 
-                if ( function_exists( 'esc_html' ) ) {
-                        return '<p>' . nl2br( esc_html( $text ) ) . '</p>';
-                }
+               $text = trim( implode( "\n\n", $processed_lines ) );
 
-                return $html;
-        }
+               if ( '' === $text ) {
+                       return '';
+               }
+
+               if ( function_exists( 'wpautop' ) ) {
+                       $html = wpautop( $text );
+               } else {
+                       $html = '<p>' . nl2br( $text ) . '</p>';
+               }
+
+               if ( function_exists( 'wp_kses_post' ) ) {
+                       return wp_kses_post( $html );
+               }
+
+               if ( function_exists( 'esc_html' ) ) {
+                       return '<p>' . nl2br( esc_html( $text ) ) . '</p>';
+               }
+
+               return $html;
+       }
+
+       /**
+        * Prepare a single line for block formatting.
+        *
+        * @param string $line Line content.
+        *
+        * @return string
+        */
+       private function prepare_block_line( string $line ): string {
+               $trimmed = trim( $line );
+
+               if ( '' === $trimmed ) {
+                       return '';
+               }
+
+               if ( '[' === $trimmed[0] ) {
+                       return $trimmed;
+               }
+
+               if ( false !== stripos( $trimmed, '<a ' ) || false !== stripos( $trimmed, '</a>' ) ) {
+                       return $trimmed;
+               }
+
+               if ( false !== strpos( $trimmed, '<' ) && false !== strpos( $trimmed, '>' ) ) {
+                       return $trimmed;
+               }
+
+               if ( $this->is_standalone_url_line( $trimmed ) ) {
+                       if ( $this->should_wrap_embed_shortcode( $trimmed ) ) {
+                               return sprintf( '[embed]%s[/embed]', $trimmed );
+                       }
+
+                       return $trimmed;
+               }
+
+               return $trimmed;
+       }
+
+       /**
+        * Determine whether a line should be treated as an embed candidate.
+        *
+        * @param string $line Trimmed line.
+        *
+        * @return bool
+        */
+       private function is_standalone_url_line( string $line ): bool {
+               if ( ! preg_match( '/^(https?:\/\/[^\s<]+)$/i', $line ) ) {
+                       return false;
+               }
+
+               return true;
+       }
+
+       /**
+        * Decide if a raw URL should be wrapped in an embed shortcode.
+        *
+        * @param string $url URL string.
+        *
+        * @return bool
+        */
+       private function should_wrap_embed_shortcode( string $url ): bool {
+               $host = parse_url( $url, PHP_URL_HOST );
+
+               if ( ! is_string( $host ) || '' === $host ) {
+                       return false;
+               }
+
+               $host = strtolower( $host );
+
+               if ( 0 === strpos( $host, 'www.' ) ) {
+                       $host = substr( $host, 4 );
+               }
+
+               if ( false !== strpos( $host, ':' ) ) {
+                       $host = strstr( $host, ':', true );
+               }
+
+               $embed_hosts = array(
+                       'youtube.com',
+                       'm.youtube.com',
+                       'youtu.be',
+                       'vimeo.com',
+                       'player.vimeo.com',
+               );
+
+               return in_array( $host, $embed_hosts, true );
+       }
 
 	/**
 	 * Build lesson title using template fallback.
