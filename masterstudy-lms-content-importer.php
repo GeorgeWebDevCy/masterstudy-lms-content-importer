@@ -8,17 +8,17 @@
  * registers the activation and deactivation functions, and defines a function
  * that starts the plugin.
  *
- * @link              https://https://www.georgenicolaou.me
+ * @link              https://www.georgenicolaou.me
  * @since             1.0.0
  * @package           Masterstudy_Lms_Content_Importer
  *
  * @wordpress-plugin
  * Plugin Name:       Masterstudy LMS Content Importer
- * Plugin URI:        https://https://www.georgenicolaou.me/plugins/masterstudy-lms-content-importer
- * Description:       Accepts a Word Document and imorts it as a Masterstudy Course (courses,lessons,sections,quizzes)
+ * Plugin URI:        https://www.georgenicolaou.me/plugins/masterstudy-lms-content-importer
+ * Description:       Accepts a Word Document and imports it as a Masterstudy Course (courses,lessons,sections,quizzes)
  * Version:           1.12.0
  * Author:            George Nicolaou
- * Author URI:        https://https://www.georgenicolaou.me/
+ * Author URI:        https://www.georgenicolaou.me/
  * License:           GPL-2.0+
  * License URI:       http://www.gnu.org/licenses/gpl-2.0.txt
  * Text Domain:       masterstudy-lms-content-importer
