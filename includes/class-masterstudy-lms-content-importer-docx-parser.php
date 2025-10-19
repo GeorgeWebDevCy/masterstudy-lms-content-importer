@@ -277,10 +277,14 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 	 *
 	 * @throws RuntimeException When the file cannot be read.
 	 */
-	private function load_document_dom( string $file_path ): DOMDocument {
-		if ( ! class_exists( ZipArchive::class ) ) {
-			throw new RuntimeException( __( 'The ZipArchive PHP extension is required to parse DOCX files.', 'masterstudy-lms-content-importer' ) );
-		}
+        private function load_document_dom( string $file_path ): DOMDocument {
+                if ( ! class_exists( ZipArchive::class ) ) {
+                        throw new RuntimeException( __( 'The ZipArchive PHP extension is required to parse DOCX files.', 'masterstudy-lms-content-importer' ) );
+                }
+
+                if ( ! class_exists( 'DOMDocument' ) || ! class_exists( 'DOMXPath' ) ) {
+                        throw new RuntimeException( __( 'The DOM PHP extension is required to parse DOCX files.', 'masterstudy-lms-content-importer' ) );
+                }
 
 		$zip = new ZipArchive();
 
