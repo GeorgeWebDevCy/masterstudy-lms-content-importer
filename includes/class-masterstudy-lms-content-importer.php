@@ -104,6 +104,8 @@ class Masterstudy_Lms_Content_Importer {
 		 * core plugin.
 		 */
 		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-masterstudy-lms-content-importer-loader.php';
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-masterstudy-lms-content-importer-docx-parser.php';
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-masterstudy-lms-content-importer-importer.php';
 
 		/**
 		 * The class responsible for defining internationalization functionality
@@ -156,6 +158,7 @@ class Masterstudy_Lms_Content_Importer {
 
 		$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_styles' );
 		$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_scripts' );
+		$this->loader->add_action( 'admin_menu', $plugin_admin, 'register_menu_page' );
 
 	}
 
