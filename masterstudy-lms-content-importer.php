@@ -44,13 +44,10 @@ if ( file_exists( plugin_dir_path( __FILE__ ) . 'vendor/autoload.php' ) ) {
         require plugin_dir_path( __FILE__ ) . 'vendor/autoload.php';
 }
 
-if ( class_exists( '\\YahnisElsts\\PluginUpdateChecker\\v5\\PucFactory' ) ) {
-        $masterstudy_lms_content_importer_update_checker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
-                'https://github.com/GeorgeWebDevCy/masterstudy-lms-content-importer/',
-                __FILE__,
-                'masterstudy-lms-content-importer'
-        );
-        $masterstudy_lms_content_importer_update_checker->setBranch( 'main' );
+require_once plugin_dir_path( __FILE__ ) . 'includes/class-masterstudy-lms-content-importer-updater.php';
+
+if ( class_exists( 'Masterstudy_Lms_Content_Importer_Updater' ) ) {
+        new Masterstudy_Lms_Content_Importer_Updater( __FILE__ );
 }
 
 /**
