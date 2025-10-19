@@ -4,7 +4,7 @@ Donate link: https://www.georgenicolaou.me/
 Tags: lms, masterstudy, course import, docx, education
 Requires at least: 5.8
 Tested up to: 6.5
-Stable tag: 1.13.3
+Stable tag: 1.13.4
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -51,6 +51,9 @@ The importer renames them to quizzes, migrates detected questions, and attaches 
 
 == Changelog ==
 
+= 1.13.4 =
+* Remove paragraph wrappers around embedded media shortcodes so YouTube videos render correctly in lesson content.
+
 = 1.13.3 =
 * Roll back the 1.13.2 media reference handling to restore the stable 1.13.1 behaviour.
 
@@ -79,6 +82,9 @@ The importer renames them to quizzes, migrates detected questions, and attaches 
 * Added page skip option and improved quiz title conversion.
 
 == Upgrade Notice ==
+
+= 1.13.4 =
+Ensures embedded media shortcodes remain intact so YouTube videos appear as playable embeds after import.
 
 = 1.13.3 =
 Reverts the 1.13.2 media reference embedding to keep course content imports stable.

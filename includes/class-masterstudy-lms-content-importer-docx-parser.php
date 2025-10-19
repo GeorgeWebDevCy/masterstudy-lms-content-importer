@@ -1078,11 +1078,15 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
                        return '';
                }
 
-               if ( function_exists( 'wpautop' ) ) {
-                       $html = wpautop( $text );
-               } else {
-                       $html = '<p>' . nl2br( $text ) . '</p>';
-               }
+              if ( function_exists( 'wpautop' ) ) {
+                      $html = wpautop( $text );
+
+                      if ( function_exists( 'shortcode_unautop' ) ) {
+                              $html = shortcode_unautop( $html );
+                      }
+              } else {
+                      $html = '<p>' . nl2br( $text ) . '</p>';
+              }
 
                return $this->sanitize_block_html( $html, $text );
        }
