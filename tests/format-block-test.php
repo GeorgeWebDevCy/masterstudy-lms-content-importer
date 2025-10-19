@@ -86,6 +86,10 @@ $anchor_line   = '<a href="https://example.com">Example</a>';
 $anchor_result = $method->invoke( $parser, array( $anchor_line ) );
 assert_contains( $anchor_line, $anchor_result, 'Anchor tags should remain untouched.' );
 
+$youtube_anchor   = '<a href="https://www.youtube.com/watch?v=dBn0ETS6XDk" target="_blank" rel="noopener">https://www.youtube.com/watch?v=dBn0ETS6XDk</a>';
+$youtube_anchor_result = $method->invoke( $parser, array( $youtube_anchor ) );
+assert_contains( '[embed]https://www.youtube.com/watch?v=dBn0ETS6XDk[/embed]', $youtube_anchor_result, 'YouTube anchor tags should be converted into embed shortcodes.' );
+
 $composite_result = $method->invoke( $parser, array( 'Intro text', 'https://vimeo.com/12345' ) );
 assert_contains( '<p>Intro text</p>', $composite_result, 'Non-URL lines should remain as paragraphs.' );
 assert_contains( '[embed]https://vimeo.com/12345[/embed]', $composite_result, 'Vimeo URLs should be wrapped in embed shortcodes.' );
