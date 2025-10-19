@@ -13,16 +13,26 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Masterstudy_Lms_Content_Importer_Docx_Parser {
 
-       private const WP_NS      = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-       private const REL_NS     = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
-       private const PKG_REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
+	private const WP_NS          = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+	private const REL_NS         = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+	private const PKG_REL_NS     = 'http://schemas.openxmlformats.org/package/2006/relationships';
+	private const DRAWING_NS     = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+	private const DRAWING_WP_NS  = 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing';
+	private const IMAGE_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image';
 
-       /**
-        * Relationship map keyed by relationship Id.
-        *
-        * @var array<string, array{target:string, mode:string, type:string}>
-        */
-       private $relationship_map = array();
+	/**
+	 * Relationship map keyed by relationship Id.
+	 *
+	 * @var array<string, array{target:string, mode:string, type:string}>
+	 */
+	private $relationship_map = array();
+
+	/**
+	 * Running counter for generated image placeholders.
+	 *
+	 * @var int
+	 */
+	private $image_counter = 0;
 
 	/**
 	 * Parse a DOCX file into course/module/lesson/question structure.
@@ -46,7 +56,8 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 			$options
 		);
 
-		$doc        = $this->load_document_dom( $file_path );
+		$this->image_counter  = 0;
+		$doc                  = $this->load_document_dom( $file_path );
 		$paragraphs = $this->extract_paragraphs( $doc );
 
 		if ( empty( $paragraphs ) ) {
@@ -62,15 +73,16 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 		$module_index    = 0;
 		$start_page = max( 1, (int) $options['start_page'] );
 
-		foreach ( $paragraphs as $paragraph ) {
-                       $style = $paragraph['style'] ?? '';
-                       $text  = isset( $paragraph['text'] ) ? trim( $paragraph['text'] ) : '';
-                       $html  = isset( $paragraph['html'] ) ? trim( $paragraph['html'] ) : $text;
-                       $page  = $paragraph['page'] ?? 1;
+                foreach ( $paragraphs as $paragraph ) {
+                        $style      = $paragraph['style'] ?? '';
+                        $text       = isset( $paragraph['text'] ) ? trim( $paragraph['text'] ) : '';
+                        $html       = isset( $paragraph['html'] ) ? trim( $paragraph['html'] ) : $text;
+                        $page       = $paragraph['page'] ?? 1;
+                        $has_images = ! empty( $paragraph['images'] );
 
-			if ( $page < $start_page || '' === $text ) {
-				continue;
-			}
+                        if ( $page < $start_page || ( '' === $text && ! $has_images ) ) {
+                                continue;
+                        }
 
 			if ( $this->is_toc_paragraph( $style ) ) {
 				continue;
@@ -139,11 +151,12 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 
 				$this->finalize_current_lesson( $current_module, $current_lesson, $options['lesson_title_template'] );
 
-				$current_lesson = array(
-					'title'        => '',
-					'source_title' => $text,
-					'content_lines'=> array(),
-				);
+                                $current_lesson = array(
+                                        'title'         => '',
+                                        'source_title'  => $text,
+                                        'content_lines' => array(),
+                                        'media'         => array(),
+                                );
 				$collecting_test = false;
 				continue;
 			}
@@ -154,14 +167,35 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
                         }
 
                         if ( null === $current_lesson ) {
-				$current_lesson = array(
-					'title'        => '',
-					'source_title' => '',
-					'content_lines'=> array(),
-				);
+                                $current_lesson = array(
+                                        'title'         => '',
+                                        'source_title'  => '',
+                                        'content_lines' => array(),
+                                        'media'         => array(),
+                                );
 			}
 
                         $current_lesson['content_lines'][] = $html;
+
+                        if ( ! empty( $paragraph['images'] ) ) {
+                                if ( ! isset( $current_lesson['media'] ) || ! is_array( $current_lesson['media'] ) ) {
+                                        $current_lesson['media'] = array();
+                                }
+
+                                foreach ( $paragraph['images'] as $image ) {
+                                        $placeholder = $image['placeholder'] ?? '';
+                                        $target      = $image['target'] ?? '';
+
+                                        if ( '' === $placeholder || '' === $target ) {
+                                                continue;
+                                        }
+
+                                        $current_lesson['media'][ $placeholder ] = array(
+                                                'target' => $target,
+                                                'alt'    => $image['alt'] ?? '',
+                                        );
+                                }
+                        }
 		}
 
 		if ( $current_module ) {
@@ -203,10 +237,11 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 			);
 		}
 
-		$module['lessons'][] = array(
-			'title'   => $title,
-			'content' => $this->format_block( $lesson['content_lines'] ?? array() ),
-		);
+                $module['lessons'][] = array(
+                        'title'   => $title,
+                        'content' => $this->format_block( $lesson['content_lines'] ?? array() ),
+                        'media'   => isset( $lesson['media'] ) && is_array( $lesson['media'] ) ? $lesson['media'] : array(),
+                );
 
 		$lesson = null;
 	}
@@ -302,25 +337,25 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 			throw new RuntimeException( __( 'Unable to open the DOCX file.', 'masterstudy-lms-content-importer' ) );
 		}
 
-               $xml       = $zip->getFromName( 'word/document.xml' );
-               $rels_xml  = $zip->getFromName( 'word/_rels/document.xml.rels' );
-               $zip->close();
+		$xml       = $zip->getFromName( 'word/document.xml' );
+		$rels_xml  = $zip->getFromName( 'word/_rels/document.xml.rels' );
+		$zip->close();
 
-               if ( false === $xml ) {
-                       throw new RuntimeException( __( 'Invalid DOCX structure: missing document.xml.', 'masterstudy-lms-content-importer' ) );
-               }
+		if ( false === $xml ) {
+			throw new RuntimeException( __( 'Invalid DOCX structure: missing document.xml.', 'masterstudy-lms-content-importer' ) );
+		}
 
-               $doc = new DOMDocument();
-               $doc->preserveWhiteSpace = false;
+		$doc = new DOMDocument();
+		$doc->preserveWhiteSpace = false;
 
-               if ( ! @$doc->loadXML( $xml ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
-                       throw new RuntimeException( __( 'Unable to read the DOCX XML content.', 'masterstudy-lms-content-importer' ) );
-               }
+		if ( ! @$doc->loadXML( $xml ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			throw new RuntimeException( __( 'Unable to read the DOCX XML content.', 'masterstudy-lms-content-importer' ) );
+		}
 
-               $this->relationship_map = $this->parse_relationships_manifest( $rels_xml );
+		$this->relationship_map = $this->parse_relationships_manifest( $rels_xml );
 
-               return $doc;
-       }
+		return $doc;
+		}
 
        /**
         * Parse the relationship manifest.
@@ -383,21 +418,21 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
                 $paragraphs = array();
                 $page       = 1;
 
-               foreach ( $xpath->query( '//w:p' ) as $paragraph ) {
-                       if ( ! $paragraph instanceof DOMElement ) {
-                               continue;
-                       }
+                foreach ( $xpath->query( '//w:p' ) as $paragraph ) {
+                        if ( ! $paragraph instanceof DOMElement ) {
+                                continue;
+                        }
 
                         foreach ( $xpath->query( './/w:br[@w:type="page"]', $paragraph ) as $unused ) {
                                 $page++;
                         }
 
-                       $tokens = $this->collect_paragraph_tokens( $paragraph, $xpath );
-                       $text   = '';
+                        $tokens = $this->collect_paragraph_tokens( $paragraph, $xpath );
+                        $text   = '';
 
-                       foreach ( $tokens as $token ) {
-                               $text .= $token['text'];
-                       }
+                        foreach ( $tokens as $token ) {
+                                $text .= $token['text'];
+                        }
 
                        if ( '' === $text ) {
                                foreach ( $xpath->query( './/w:t', $paragraph ) as $text_node ) {
@@ -416,20 +451,42 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
                                 $style = $style ? $style->nodeValue : '';
                         }
 
-                       if ( '' !== $text ) {
-                               $entry = array(
-                                       'text'  => $text,
-                                       'style' => $style,
-                                       'page'  => $page,
-                               );
+                        $images = array();
 
-                               $html = $this->build_paragraph_html( $tokens );
+                        foreach ( $tokens as $token ) {
+                                if ( 'image' !== ( $token['type'] ?? '' ) ) {
+                                        continue;
+                                }
 
-                               if ( '' !== $html ) {
-                                       $entry['html'] = $html;
-                               }
+                                if ( empty( $token['placeholder'] ) || empty( $token['target'] ) ) {
+                                        continue;
+                                }
 
-                               $paragraphs[] = $entry;
+                                $images[] = array(
+                                        'placeholder' => $token['placeholder'],
+                                        'target'      => $token['target'],
+                                        'alt'         => $token['alt'] ?? '',
+                                );
+                        }
+
+                        if ( '' !== $text || ! empty( $images ) ) {
+                                $entry = array(
+                                        'text'   => $text,
+                                        'style'  => $style,
+                                        'page'   => $page,
+                                );
+
+                                $html = $this->build_paragraph_html( $tokens );
+
+                                if ( '' !== $html ) {
+                                        $entry['html'] = $html;
+                                }
+
+                                if ( ! empty( $images ) ) {
+                                        $entry['images'] = $images;
+                                }
+
+                                $paragraphs[] = $entry;
                         }
                 }
 
@@ -437,53 +494,48 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
         }
 
         /**
-        * Collect paragraph tokens preserving hyperlink information.
-        *
-        * @param DOMElement $paragraph Paragraph node.
-        * @param DOMXPath   $xpath     XPath helper.
-        *
-        * @return array<int, array{type:string, text:string, href?:string}>
-        */
-       private function collect_paragraph_tokens( DOMElement $paragraph, DOMXPath $xpath ): array {
-               $tokens = array();
+         * Collect paragraph tokens preserving hyperlink information.
+         *
+         * @param DOMElement $paragraph Paragraph node.
+         * @param DOMXPath   $xpath     XPath helper.
+         *
+         * @return array<int, array{type:string, text:string, href?:string, placeholder?:string, target?:string, alt?:string}>
+         */
+        private function collect_paragraph_tokens( DOMElement $paragraph, DOMXPath $xpath ): array {
+                $tokens = array();
 
-               foreach ( $paragraph->childNodes as $child ) {
-                       if ( ! $child instanceof DOMElement ) {
-                               continue;
-                       }
+                foreach ( $paragraph->childNodes as $child ) {
+                        if ( ! $child instanceof DOMElement ) {
+                                continue;
+                        }
 
-                       if ( self::WP_NS === $child->namespaceURI && 'hyperlink' === $child->localName ) {
-                               $text = $this->collect_node_text( $child, $xpath );
+                        if ( self::WP_NS === $child->namespaceURI && 'hyperlink' === $child->localName ) {
+                                $tokens = array_merge( $tokens, $this->collect_hyperlink_tokens( $child, $xpath ) );
 
-                               if ( '' === $text ) {
-                                       continue;
-                               }
+                                continue;
+                        }
 
-                               $tokens[] = array(
-                                       'type' => 'hyperlink',
-                                       'text' => $text,
-                                       'href' => $this->resolve_hyperlink_href( $child ),
-                               );
+                        if ( self::WP_NS === $child->namespaceURI && 'r' === $child->localName ) {
+                                $tokens = array_merge( $tokens, $this->collect_run_tokens( $child, $xpath ) );
+                                continue;
+                        }
 
-                               continue;
-                       }
+                        $text = $this->collect_node_text( $child, $xpath );
 
-                       $text = $this->collect_node_text( $child, $xpath );
+                        if ( '' === $text ) {
+                                continue;
+                        }
 
-                       if ( '' === $text ) {
-                               continue;
-                       }
+                        $tokens[] = array(
+                                'type' => 'text',
+                                'text' => $text,
+                        );
+                }
 
-                       $tokens[] = array(
-                               'type' => 'text',
-                               'text' => $text,
-                       );
-               }
+                if ( empty( $tokens ) ) {
+                        $text = $this->collect_node_text( $paragraph, $xpath );
 
-               if ( empty( $tokens ) ) {
-                       $text = $this->collect_node_text( $paragraph, $xpath );
-
-                       if ( '' !== $text ) {
+                        if ( '' !== $text ) {
                                $tokens[] = array(
                                        'type' => 'text',
                                        'text' => $text,
@@ -495,11 +547,151 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
        }
 
        /**
-        * Retrieve textual content from a node.
-        *
-        * @param DOMNode  $node  Node to inspect.
-        * @param DOMXPath $xpath XPath helper.
-        *
+         * Collect tokens from hyperlink nodes, including inline images.
+         *
+         * @param DOMElement $hyperlink Hyperlink element.
+         * @param DOMXPath   $xpath     XPath helper.
+         *
+         * @return array<int, array{type:string, text:string, href?:string, placeholder?:string, target?:string, alt?:string}>
+         */
+        private function collect_hyperlink_tokens( DOMElement $hyperlink, DOMXPath $xpath ): array {
+                $tokens = array();
+
+                foreach ( $hyperlink->childNodes as $child ) {
+                        if ( ! $child instanceof DOMElement ) {
+                                continue;
+                        }
+
+                        if ( self::WP_NS === $child->namespaceURI && 'r' === $child->localName ) {
+                                $child_tokens = $this->collect_run_tokens( $child, $xpath );
+
+                                foreach ( $child_tokens as $token ) {
+                                        if ( 'text' === ( $token['type'] ?? '' ) ) {
+                                                $token['type'] = 'hyperlink';
+                                                $token['href'] = $this->resolve_hyperlink_href( $hyperlink );
+                                        }
+
+                                        $tokens[] = $token;
+                                }
+
+                                continue;
+                        }
+
+                        $text = $this->collect_node_text( $child, $xpath );
+
+                        if ( '' === $text ) {
+                                continue;
+                        }
+
+                        $tokens[] = array(
+                                'type' => 'hyperlink',
+                                'text' => $text,
+                                'href' => $this->resolve_hyperlink_href( $hyperlink ),
+                        );
+                }
+
+                if ( empty( $tokens ) ) {
+                        $text = $this->collect_node_text( $hyperlink, $xpath );
+
+                        if ( '' !== $text ) {
+                                $tokens[] = array(
+                                        'type' => 'hyperlink',
+                                        'text' => $text,
+                                        'href' => $this->resolve_hyperlink_href( $hyperlink ),
+                                );
+                        }
+                }
+
+                return $tokens;
+        }
+
+        /**
+         * Collect tokens from a run node, including drawings.
+         *
+         * @param DOMElement $run   Run element.
+         * @param DOMXPath   $xpath XPath helper.
+         *
+         * @return array<int, array{type:string, text:string, placeholder?:string, target?:string, alt?:string}>
+         */
+        private function collect_run_tokens( DOMElement $run, DOMXPath $xpath ): array {
+                $tokens      = array();
+                $text_buffer = '';
+
+                foreach ( $run->childNodes as $child ) {
+                        if ( ! $child instanceof DOMElement ) {
+                                continue;
+                        }
+
+                        if ( self::WP_NS === $child->namespaceURI && 't' === $child->localName ) {
+                                $text_buffer .= $child->nodeValue;
+                                continue;
+                        }
+
+                        if ( self::WP_NS === $child->namespaceURI && 'drawing' === $child->localName ) {
+                                if ( '' !== $text_buffer ) {
+                                        $tokens[]   = array(
+                                                'type' => 'text',
+                                                'text' => $text_buffer,
+                                        );
+                                        $text_buffer = '';
+                                }
+
+                                $image_token = $this->create_drawing_token( $child );
+
+                                if ( null !== $image_token ) {
+                                        $tokens[] = $image_token;
+                                }
+
+                                continue;
+                        }
+
+                        if ( '' !== $text_buffer ) {
+                                $tokens[]   = array(
+                                        'type' => 'text',
+                                        'text' => $text_buffer,
+                                );
+                                $text_buffer = '';
+                        }
+
+                        $text = $this->collect_node_text( $child, $xpath );
+
+                        if ( '' === $text ) {
+                                continue;
+                        }
+
+                        $tokens[] = array(
+                                'type' => 'text',
+                                'text' => $text,
+                        );
+                }
+
+                if ( '' !== $text_buffer ) {
+                        $tokens[] = array(
+                                'type' => 'text',
+                                'text' => $text_buffer,
+                        );
+                }
+
+                if ( empty( $tokens ) ) {
+                        $text = $this->collect_node_text( $run, $xpath );
+
+                        if ( '' !== $text ) {
+                                $tokens[] = array(
+                                        'type' => 'text',
+                                        'text' => $text,
+                                );
+                        }
+                }
+
+                return $tokens;
+        }
+
+        /**
+         * Retrieve textual content from a node.
+         *
+         * @param DOMNode  $node  Node to inspect.
+         * @param DOMXPath $xpath XPath helper.
+         *
         * @return string
         */
        private function collect_node_text( DOMNode $node, DOMXPath $xpath ): string {
@@ -515,24 +707,33 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
        /**
         * Convert paragraph tokens into HTML fragments.
         *
-        * @param array<int, array{type:string, text:string, href?:string}> $tokens Token list.
+        * @param array<int, array{type:string, text:string, href?:string, placeholder?:string, target?:string, alt?:string}> $tokens Token list.
         *
         * @return string
         */
-       private function build_paragraph_html( array $tokens ): string {
-               if ( empty( $tokens ) ) {
-                       return '';
-               }
+        private function build_paragraph_html( array $tokens ): string {
+                if ( empty( $tokens ) ) {
+                        return '';
+                }
 
-               $fragments = array();
-               $count     = count( $tokens );
+                $fragments = array();
+                $count     = count( $tokens );
 
-               foreach ( $tokens as $index => $token ) {
-                       if ( empty( $token['text'] ) ) {
-                               continue;
-                       }
+                foreach ( $tokens as $index => $token ) {
+                        if ( 'image' === ( $token['type'] ?? '' ) ) {
+                                if ( empty( $token['placeholder'] ) ) {
+                                        continue;
+                                }
 
-                       $segment = $this->normalize_text_segment( $token['text'], 0 === $index, $index === $count - 1 );
+                                $fragments[] = $token['placeholder'];
+                                continue;
+                        }
+
+                        if ( empty( $token['text'] ) ) {
+                                continue;
+                        }
+
+                        $segment = $this->normalize_text_segment( $token['text'], 0 === $index, $index === $count - 1 );
 
                        if ( '' === $segment ) {
                                continue;
@@ -555,11 +756,111 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
                                continue;
                        }
 
-                       $fragments[] = $this->escape_html( $segment );
-               }
+                        $fragments[] = $this->escape_html( $segment );
+                }
 
-               return trim( implode( '', $fragments ) );
-       }
+                return trim( implode( '', $fragments ) );
+        }
+
+        /**
+         * Create an image token from a drawing node.
+         *
+         * @param DOMElement $drawing Drawing element.
+         *
+         * @return array{type:string, text:string, placeholder:string, target:string, alt?:string}|null
+         */
+        private function create_drawing_token( DOMElement $drawing ) {
+                $blip_nodes = $drawing->getElementsByTagNameNS( self::DRAWING_NS, 'blip' );
+
+                if ( 0 === $blip_nodes->length ) {
+                        return null;
+                }
+
+                /** @var DOMElement $blip */
+                $blip = $blip_nodes->item( 0 );
+
+                $relationship_id = $blip->getAttributeNS( self::REL_NS, 'embed' );
+
+                if ( '' === $relationship_id ) {
+                        return null;
+                }
+
+                $target = $this->resolve_image_target( $relationship_id );
+
+                if ( '' === $target ) {
+                        return null;
+                }
+
+                $alt      = '';
+                $doc_prs  = $drawing->getElementsByTagNameNS( self::DRAWING_WP_NS, 'docPr' );
+
+                if ( $doc_prs->length > 0 ) {
+                        /** @var DOMElement $doc_pr */
+                        $doc_pr = $doc_prs->item( 0 );
+                        $alt    = $doc_pr->getAttribute( 'descr' );
+
+                        if ( '' === $alt ) {
+                                $alt = $doc_pr->getAttribute( 'title' );
+                        }
+                }
+
+                $this->image_counter++;
+                $placeholder = sprintf( '{{docx_image_%d}}', $this->image_counter );
+
+                return array(
+                        'type'        => 'image',
+                        'text'        => '',
+                        'placeholder' => $placeholder,
+                        'target'      => $target,
+                        'alt'         => $alt,
+                );
+        }
+
+        /**
+         * Resolve the image target path for a relationship.
+         *
+         * @param string $relationship_id Relationship identifier.
+         *
+         * @return string
+         */
+        private function resolve_image_target( string $relationship_id ): string {
+                if ( '' === $relationship_id || empty( $this->relationship_map[ $relationship_id ] ) ) {
+                        return '';
+                }
+
+                $relationship = $this->relationship_map[ $relationship_id ];
+
+                if ( ! $this->is_image_relationship( $relationship ) ) {
+                        return '';
+                }
+
+                if ( isset( $relationship['mode'] ) && 'External' === $relationship['mode'] ) {
+                        return '';
+                }
+
+                $target = $relationship['target'] ?? '';
+
+                if ( '' === $target ) {
+                        return '';
+                }
+
+                if ( '/' === $target[0] ) {
+                        return ltrim( $target, '/' );
+                }
+
+                return 'word/' . ltrim( $target, '/' );
+        }
+
+        /**
+         * Determine if relationship is pointing to an image resource.
+         *
+         * @param array{target:string, mode:string, type:string} $relationship Relationship entry.
+         *
+         * @return bool
+         */
+        private function is_image_relationship( array $relationship ): bool {
+                return isset( $relationship['type'] ) && self::IMAGE_REL_TYPE === $relationship['type'];
+        }
 
        /**
         * Normalize token text to keep whitespace predictable.
