@@ -32,6 +32,7 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 				'module_identifier'     => 'Module',
 				'lesson_identifier'     => '',
 				'use_toc'               => true,
+				'start_page'            => 1,
 			),
 			$options
 		);
@@ -58,9 +59,18 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 		$module_index    = 0;
 		$module_cursor   = 0;
 
+		$start_page      = max( 1, (int) $options['start_page'] );
+		$current_page    = 1;
+
 		foreach ( $paragraphs as $paragraph ) {
 			$text  = $paragraph['text'];
 			$style = $paragraph['style'];
+
+			$current_page = $paragraph['page'];
+
+			if ( $current_page < $start_page ) {
+				continue;
+			}
 
 			if ( '' === $text ) {
 				continue;
@@ -340,8 +350,13 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 		$xpath->registerNamespace( 'w', self::WP_NS );
 
 		$paragraphs = array();
+		$page       = 1;
 
 		foreach ( $xpath->query( '//w:p' ) as $paragraph ) {
+			foreach ( $xpath->query( './/w:br[@w:type="page"]', $paragraph ) as $unused ) {
+				$page++;
+			}
+
 			$text = '';
 
 			foreach ( $xpath->query( './/w:t', $paragraph ) as $text_node ) {
@@ -363,6 +378,7 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 				$paragraphs[] = array(
 					'text'  => $text,
 					'style' => $style,
+					'page'  => $page,
 				);
 			}
 		}
@@ -382,6 +398,7 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 		$current_module = null;
 
 		foreach ( $paragraphs as $paragraph ) {
+			$page  = $paragraph['page'];
 			$style = $paragraph['style'];
 			$text  = $this->cleanup_toc_title( $paragraph['text'] );
 
@@ -394,6 +411,7 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 					'title'   => $text,
 					'label'   => $this->normalize_label( $text ),
 					'lessons' => array(),
+					'page'    => $page,
 				);
 				$current_module = count( $modules ) - 1;
 				continue;
@@ -403,6 +421,7 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 				$modules[ $current_module ]['lessons'][] = array(
 					'title' => $text,
 					'label' => $this->normalize_label( $text ),
+					'page'  => $page,
 				);
 			}
 		}

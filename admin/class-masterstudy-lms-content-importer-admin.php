@@ -51,6 +51,13 @@ class Masterstudy_Lms_Content_Importer_Admin {
 	private $form_values = array();
 
 	/**
+	 * Page number where parsing should start (if provided).
+	 *
+	 * @var int
+	 */
+	private $start_page = 1;
+
+	/**
 	 * Initialize the class and set its properties.
 	 *
 	 * @param string $plugin_name Plugin slug.
@@ -60,6 +67,7 @@ class Masterstudy_Lms_Content_Importer_Admin {
 		$this->plugin_name = $plugin_name;
 		$this->version     = $version;
 		$this->form_values = $this->get_default_form_values();
+		$this->start_page  = 1;
 		$this->preview_data = null;
 	}
 
@@ -200,6 +208,24 @@ class Masterstudy_Lms_Content_Importer_Admin {
 							</label>
 						</td>
 					</tr>
+					<tr>
+						<th scope="row">
+							<label for="ms_lms_start_page"><?php esc_html_e( 'Skip pages before', 'masterstudy-lms-content-importer' ); ?></label>
+						</th>
+						<td>
+							<input
+								type="number"
+								min="1"
+								id="ms_lms_start_page"
+								name="ms_lms_start_page"
+								class="small-text"
+								value="<?php echo esc_attr( (string) $this->start_page ); ?>"
+							/>
+							<p class="description">
+								<?php esc_html_e( 'Set the first page of actual course content. All pages before this number will be ignored.', 'masterstudy-lms-content-importer' ); ?>
+							</p>
+						</td>
+					</tr>
 				</table>
 				<?php submit_button( __( 'Import Course', 'masterstudy-lms-content-importer' ) ); ?>
 			</form>
@@ -227,6 +253,7 @@ class Masterstudy_Lms_Content_Importer_Admin {
 		);
 
 		$this->form_values = array_merge( $this->get_default_form_values(), $values );
+		$this->start_page  = $this->sanitize_start_page( $_POST['ms_lms_start_page'] ?? 1 ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
 
 		if ( empty( $_FILES['ms_lms_import_docx']['name'] ) ) { // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash
 			$this->add_message( 'error', __( 'Please select a DOCX file to import.', 'masterstudy-lms-content-importer' ) );
@@ -266,6 +293,7 @@ class Masterstudy_Lms_Content_Importer_Admin {
 					'module_identifier'     => $this->form_values['module_identifier'],
 					'lesson_identifier'     => $this->form_values['lesson_identifier'],
 					'use_toc'               => $this->form_values['use_toc'],
+					'start_page'            => $this->start_page,
 				)
 			);
 
@@ -280,8 +308,10 @@ class Masterstudy_Lms_Content_Importer_Admin {
 						'module_identifier'     => $this->form_values['module_identifier'],
 						'lesson_identifier'     => $this->form_values['lesson_identifier'],
 						'use_toc'               => (bool) $this->form_values['use_toc'],
+						'start_page'            => $this->start_page,
 					),
 					'form_values'    => $this->form_values,
+					'start_page'     => $this->start_page,
 					'mapping'        => $parsed,
 					'created_at'     => time(),
 				),
@@ -329,6 +359,7 @@ class Masterstudy_Lms_Content_Importer_Admin {
 		}
 
 		$this->form_values  = array_merge( $this->get_default_form_values(), $state['form_values'] ?? array() );
+		$this->start_page   = isset( $state['start_page'] ) ? (int) $state['start_page'] : 1;
 		$this->preview_data = array(
 			'token'   => $token,
 			'mapping' => $state['mapping'] ?? array(),
@@ -357,6 +388,7 @@ class Masterstudy_Lms_Content_Importer_Admin {
 					'status'                => 'publish',
 					'lesson_title_template' => $this->form_values['lesson_title_template'],
 					'parser_options'        => $parser_options,
+					'start_page'            => $this->start_page,
 				)
 			);
 
@@ -378,6 +410,7 @@ class Masterstudy_Lms_Content_Importer_Admin {
 			$cleanup            = true;
 			$this->preview_data = null;
 			$this->form_values  = $this->get_default_form_values();
+			$this->start_page   = 1;
 		} catch ( Exception $exception ) {
 			$this->add_message( 'error', $exception->getMessage() );
 		} finally {
@@ -553,6 +586,19 @@ class Masterstudy_Lms_Content_Importer_Admin {
 	 */
 	private function sanitize_identifier( string $value ): string {
 		return sanitize_text_field( wp_unslash( $value ) );
+	}
+
+	/**
+	 * Sanitize start page input.
+	 *
+	 * @param mixed $value Raw value.
+	 *
+	 * @return int
+	 */
+	private function sanitize_start_page( $value ): int {
+		$page = (int) $value;
+
+		return max( 1, $page );
 	}
 
 	/**
