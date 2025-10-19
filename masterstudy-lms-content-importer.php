@@ -40,14 +40,18 @@ define( 'MASTERSTUDY_LMS_CONTENT_IMPORTER_VERSION', '1.0.0' );
 /**
  * Set up automatic updates via GitHub using Plugin Update Checker.
  */
-require plugin_dir_path( __FILE__ ) . 'plugin-update-checker/plugin-update-checker.php';
+if ( file_exists( plugin_dir_path( __FILE__ ) . 'vendor/autoload.php' ) ) {
+        require plugin_dir_path( __FILE__ ) . 'vendor/autoload.php';
+}
 
-$masterstudy_lms_content_importer_update_checker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
-	'https://github.com/GeorgeWebDevCy/masterstudy-lms-content-importer/',
-	__FILE__,
-	'masterstudy-lms-content-importer'
-);
-$masterstudy_lms_content_importer_update_checker->setBranch( 'main' );
+if ( class_exists( '\\YahnisElsts\\PluginUpdateChecker\\v5\\PucFactory' ) ) {
+        $masterstudy_lms_content_importer_update_checker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+                'https://github.com/GeorgeWebDevCy/masterstudy-lms-content-importer/',
+                __FILE__,
+                'masterstudy-lms-content-importer'
+        );
+        $masterstudy_lms_content_importer_update_checker->setBranch( 'main' );
+}
 
 /**
  * The code that runs during plugin activation.
