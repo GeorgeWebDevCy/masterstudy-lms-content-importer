@@ -1,114 +1,61 @@
-=== Plugin Name ===
-Contributors: (this should be a list of wordpress.org userid's)
-Donate link: https://https://www.georgenicolaou.me/
-Tags: comments, spam
-Requires at least: 3.0.1
-Tested up to: 3.4
-Stable tag: 4.3
+=== MasterStudy LMS Content Importer ===
+Contributors: orionaselite
+Donate link: https://www.georgenicolaou.me/
+Tags: lms, masterstudy, course import, docx, education
+Requires at least: 5.8
+Tested up to: 6.5
+Stable tag: 1.11.0
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
-Here is a short description of the plugin.  This should be no more than 150 characters.  No markup here.
+Import structured DOCX course outlines into MasterStudy LMS with sections, lessons, and quizzes in one go.
 
 == Description ==
 
-This is the long description.  No limit, and you can use Markdown (as well as in the following sections).
+MasterStudy LMS Content Importer lets you turn a Word document curriculum into a fully populated MasterStudy course in minutes. Upload any `.docx` outline (for example, the sample file bundled in `sample-data/Stress Resilience Curriculum_ALL MODULES.docx`), preview the detected structure, then confirm to create numbered modules/sections, lessons, and quizzes automatically.
 
-For backwards compatibility, if this section is missing, the full length of the short description will be used, and
-Markdown parsed.
+**Highlights**
 
-A few notes about the sections above:
-
-*   "Contributors" is a comma separated list of wp.org/wp-plugins.org usernames
-*   "Tags" is a comma separated list of tags that apply to the plugin
-*   "Requires at least" is the lowest version that the plugin will work on
-*   "Tested up to" is the highest version that you've *successfully used to test the plugin*. Note that it might work on
-higher versions... this is just the highest one you've verified.
-*   Stable tag should indicate the Subversion "tag" of the latest stable version, or "trunk," if you use `/trunk/` for
-stable.
-
-    Note that the `readme.txt` of the stable tag is the one that is considered the defining one for the plugin, so
-if the `/trunk/readme.txt` file says that the stable tag is `4.3`, then it is `/tags/4.3/readme.txt` that'll be used
-for displaying information about the plugin.  In this situation, the only thing considered from the trunk `readme.txt`
-is the stable tag pointer.  Thus, if you develop in trunk, you can update the trunk `readme.txt` to reflect changes in
-your in-development version, without having that information incorrectly disclosed about the current stable version
-that lacks those changes -- as long as the trunk's `readme.txt` points to the correct stable tag.
-
-    If no stable tag is provided, it is assumed that trunk is stable, but you should specify "trunk" if that's where
-you put the stable version, in order to eliminate any doubt.
+* Structured preview of modules, lessons, and quiz counts before anything is created.
+* Uses the document table of contents when available, with manual fallback patterns for headings.
+* Automatically numbers modules (`1.`, `2.` …) and lesson titles (`1.1`, `1.2` …) while retaining their original headings.
+* Converts "Test" sections into MasterStudy quizzes, preserving the parsed questions.
+* Lesson title templating with placeholders such as `%module_index%`, `%lesson_index%`, `%module_title%`, or `%lesson_source_title%`.
+* Option to skip front matter pages so parsing begins exactly where your content starts.
 
 == Installation ==
 
-This section describes how to install the plugin and get it working.
-
-e.g.
-
-1. Upload `masterstudy-lms-content-importer.php` to the `/wp-content/plugins/` directory
-1. Activate the plugin through the 'Plugins' menu in WordPress
-1. Place `<?php do_action('plugin_name_hook'); ?>` in your templates
+1. Upload the plugin folder to `/wp-content/plugins/` or install it via the WordPress admin.
+2. Activate **MasterStudy LMS Content Importer**.
+3. Ensure the MasterStudy LMS plugin (free or pro) is active.
+4. Go to **Course Importer** in the WordPress dashboard to upload your `.docx` outline.
 
 == Frequently Asked Questions ==
 
-= A question that someone might have =
+= Do I need a specific document format? =
 
-An answer to that question.
+Any `.docx` file exported from Microsoft Word or compatible editors works. Using consistent heading styles and a table of contents improves detection, but you can also provide custom module/lesson identifiers in the importer settings.
 
-= What about foo bar? =
+= Can I adjust lesson names? =
 
-Answer to foo bar dilemma.
+Yes. Set the lesson title template before import and the plugin will apply it while numbering lessons automatically.
+
+= What happens to "Test" sections? =
+
+The importer renames them to quizzes, migrates detected questions, and attaches the quiz at the end of the corresponding section.
 
 == Screenshots ==
 
-1. This screen shot description corresponds to screenshot-1.(png|jpg|jpeg|gif). Note that the screenshot is taken from
-the /assets directory or the directory that contains the stable readme.txt (tags or trunk). Screenshots in the /assets
-directory take precedence. For example, `/assets/screenshot-1.png` would win over `/tags/4.3/screenshot-1.png`
-(or jpg, jpeg, gif).
-2. This is the second screen shot
+1. Admin importer form with configuration options.
+2. Course structure preview before confirmation.
 
 == Changelog ==
 
-= 1.0 =
-* A change since the previous version.
-* Another change.
-
-= 0.5 =
-* List versions from most recent at top to oldest at bottom.
+= 1.11.0 =
+* Added page skipping support and improved quiz title conversion.
 
 == Upgrade Notice ==
 
-= 1.0 =
-Upgrade notices describe the reason a user should upgrade.  No more than 300 characters.
+= 1.11.0 =
+Parsing now respects the "Skip pages before" option and converts tests to quizzes—update to keep imports accurate.
 
-= 0.5 =
-This version fixes a security related bug.  Upgrade immediately.
-
-== Arbitrary section ==
-
-You may provide arbitrary sections, in the same format as the ones above.  This may be of use for extremely complicated
-plugins where more information needs to be conveyed that doesn't fit into the categories of "description" or
-"installation."  Arbitrary sections will be shown below the built-in sections outlined above.
-
-== A brief Markdown Example ==
-
-Ordered list:
-
-1. Some feature
-1. Another feature
-1. Something else about the plugin
-
-Unordered list:
-
-* something
-* something else
-* third thing
-
-Here's a link to [WordPress](http://wordpress.org/ "Your favorite software") and one to [Markdown's Syntax Documentation][markdown syntax].
-Titles are optional, naturally.
-
-[markdown syntax]: http://daringfireball.net/projects/markdown/syntax
-            "Markdown is what the parser uses to process much of the readme file"
-
-Markdown uses email style notation for blockquotes and I've been told:
-> Asterisks for *emphasis*. Double it up  for **strong**.
-
-`<?php code(); // goes in backticks ?>`
