@@ -166,17 +166,17 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 		);
 	}
 
-	/**
-	 * Finalize the current lesson and store it under the current module.
-	 *
-	 * @param array $module                 Module reference.
-	 * @param ?array &$lesson               Lesson reference.
-	 * @param string $lesson_title_template Template supplied by the user.
-	 */
-	private function finalize_current_lesson( array &$module, ?array &$lesson, string $lesson_title_template ): void {
-		if ( null === $lesson ) {
-			return;
-		}
+       /**
+        * Finalize the current lesson and store it under the current module.
+        *
+        * @param ?array $module                Module reference.
+        * @param ?array &$lesson               Lesson reference.
+        * @param string $lesson_title_template Template supplied by the user.
+        */
+       private function finalize_current_lesson( ?array &$module, ?array &$lesson, string $lesson_title_template ): void {
+               if ( null === $module || null === $lesson ) {
+                       return;
+               }
 
 		$lesson_index = $module['lesson_counter'] + 1;
 		$module['lesson_counter'] = $lesson_index;
