@@ -37,6 +37,13 @@ class Masterstudy_Lms_Content_Importer_Admin {
 	private $messages = array();
 
 	/**
+	 * Parsed mapping waiting for confirmation.
+	 *
+	 * @var array<string, mixed>|null
+	 */
+	private $preview_data = null;
+
+	/**
 	 * Sanitized values to repopulate the form.
 	 *
 	 * @var array<string, mixed>
@@ -53,6 +60,7 @@ class Masterstudy_Lms_Content_Importer_Admin {
 		$this->plugin_name = $plugin_name;
 		$this->version     = $version;
 		$this->form_values = $this->get_default_form_values();
+		$this->preview_data = null;
 	}
 
 	/**
@@ -195,6 +203,7 @@ class Masterstudy_Lms_Content_Importer_Admin {
 				</table>
 				<?php submit_button( __( 'Import Course', 'masterstudy-lms-content-importer' ) ); ?>
 			</form>
+			<?php $this->render_preview(); ?>
 		</div>
 		<?php
 	}
@@ -204,6 +213,11 @@ class Masterstudy_Lms_Content_Importer_Admin {
 	 */
 	private function handle_import_request() {
 		check_admin_referer( 'ms_lms_import_course', 'ms_lms_import_nonce' );
+
+		if ( ! empty( $_POST['ms_lms_import_confirm'] ) && ! empty( $_POST['ms_lms_import_token'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$this->process_confirm_request();
+			return;
+		}
 
 		$values = array(
 			'lesson_title_template' => $this->sanitize_template( $_POST['ms_lms_lesson_title_template'] ?? '' ), // phpcs:ignore WordPress.Security.NonceVerification.Missing
@@ -245,7 +259,96 @@ class Masterstudy_Lms_Content_Importer_Admin {
 
 		try {
 			$parser   = new Masterstudy_Lms_Content_Importer_Docx_Parser();
-			$importer = new Masterstudy_Lms_Content_Importer_Importer( $parser );
+			$parsed   = $parser->parse(
+				$file_path,
+				array(
+					'lesson_title_template' => $this->form_values['lesson_title_template'],
+					'module_identifier'     => $this->form_values['module_identifier'],
+					'lesson_identifier'     => $this->form_values['lesson_identifier'],
+					'use_toc'               => $this->form_values['use_toc'],
+				)
+			);
+
+			$token   = wp_generate_password( 20, false, false );
+			$token   = preg_replace( '/[^a-zA-Z0-9]/', '', $token );
+			$success = set_transient(
+				$this->get_transient_key( $token ),
+				array(
+					'file_path'      => $file_path,
+					'parser_options' => array(
+						'lesson_title_template' => $this->form_values['lesson_title_template'],
+						'module_identifier'     => $this->form_values['module_identifier'],
+						'lesson_identifier'     => $this->form_values['lesson_identifier'],
+						'use_toc'               => (bool) $this->form_values['use_toc'],
+					),
+					'form_values'    => $this->form_values,
+					'mapping'        => $parsed,
+					'created_at'     => time(),
+				),
+				HOUR_IN_SECONDS
+			);
+
+			if ( ! $success ) {
+				wp_delete_file( $file_path );
+				$this->add_message( 'error', __( 'Unable to prepare the preview. Please try again.', 'masterstudy-lms-content-importer' ) );
+				return;
+			}
+
+			$this->preview_data = array(
+				'token'   => $token,
+				'mapping' => $parsed,
+			);
+
+			$this->add_message( 'info', __( 'Review the detected course structure below, then confirm the import.', 'masterstudy-lms-content-importer' ) );
+		} catch ( Exception $exception ) {
+			$this->add_message( 'error', $exception->getMessage() );
+
+			if ( ! empty( $file_path ) && file_exists( $file_path ) ) {
+				wp_delete_file( $file_path );
+			}
+		}
+	}
+
+	/**
+	 * Process the confirmation request and perform the import.
+	 */
+	private function process_confirm_request() {
+		$token = wp_unslash( $_POST['ms_lms_import_token'] ?? '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$token = preg_replace( '/[^a-zA-Z0-9]/', '', $token );
+
+		if ( '' === $token ) {
+			$this->add_message( 'error', __( 'Invalid import token. Please upload the document again.', 'masterstudy-lms-content-importer' ) );
+			return;
+		}
+
+		$state = get_transient( $this->get_transient_key( $token ) );
+
+		if ( empty( $state ) || ! is_array( $state ) ) {
+			$this->add_message( 'error', __( 'Your import session has expired. Please upload the document again.', 'masterstudy-lms-content-importer' ) );
+			return;
+		}
+
+		$this->form_values  = array_merge( $this->get_default_form_values(), $state['form_values'] ?? array() );
+		$this->preview_data = array(
+			'token'   => $token,
+			'mapping' => $state['mapping'] ?? array(),
+		);
+
+		$file_path = $state['file_path'] ?? '';
+
+		if ( empty( $file_path ) || ! file_exists( $file_path ) ) {
+			delete_transient( $this->get_transient_key( $token ) );
+			$this->preview_data = null;
+			$this->add_message( 'error', __( 'The uploaded file could not be found. Please upload the document again.', 'masterstudy-lms-content-importer' ) );
+			return;
+		}
+
+		$cleanup = false;
+
+		try {
+			$parser_options = $state['parser_options'] ?? array();
+
+			$importer = new Masterstudy_Lms_Content_Importer_Importer( new Masterstudy_Lms_Content_Importer_Docx_Parser() );
 
 			$course_id = $importer->import(
 				$file_path,
@@ -253,12 +356,7 @@ class Masterstudy_Lms_Content_Importer_Admin {
 					'author_id'             => get_current_user_id(),
 					'status'                => 'publish',
 					'lesson_title_template' => $this->form_values['lesson_title_template'],
-					'parser_options'        => array(
-						'lesson_title_template' => $this->form_values['lesson_title_template'],
-						'module_identifier'     => $this->form_values['module_identifier'],
-						'lesson_identifier'     => $this->form_values['lesson_identifier'],
-						'use_toc'               => $this->form_values['use_toc'],
-					),
+					'parser_options'        => $parser_options,
 				)
 			);
 
@@ -276,11 +374,19 @@ class Masterstudy_Lms_Content_Importer_Admin {
 			} else {
 				$this->add_message( 'success', __( 'Course imported successfully.', 'masterstudy-lms-content-importer' ) );
 			}
+
+			$cleanup            = true;
+			$this->preview_data = null;
+			$this->form_values  = $this->get_default_form_values();
 		} catch ( Exception $exception ) {
 			$this->add_message( 'error', $exception->getMessage() );
 		} finally {
-			if ( ! empty( $file_path ) && file_exists( $file_path ) ) {
-				wp_delete_file( $file_path );
+			if ( $cleanup ) {
+				delete_transient( $this->get_transient_key( $token ) );
+
+				if ( file_exists( $file_path ) ) {
+					wp_delete_file( $file_path );
+				}
 			}
 		}
 	}
@@ -323,6 +429,71 @@ class Masterstudy_Lms_Content_Importer_Admin {
 			'type' => $type,
 			'text' => $text,
 		);
+	}
+
+	/**
+	 * Render the mapping preview and confirmation form.
+	 */
+	private function render_preview() {
+		if ( empty( $this->preview_data ) || empty( $this->preview_data['mapping']['modules'] ) ) {
+			return;
+		}
+
+		$modules = $this->preview_data['mapping']['modules'];
+		$token   = $this->preview_data['token'];
+
+		?>
+		<div class="notice notice-info is-dismissible">
+			<p><?php esc_html_e( 'The following course structure was detected. Confirm to complete the import or upload a new document to start over.', 'masterstudy-lms-content-importer' ); ?></p>
+		</div>
+
+		<div class="ms-lms-import-preview">
+			<h2><?php esc_html_e( 'Course Structure Preview', 'masterstudy-lms-content-importer' ); ?></h2>
+			<ol class="ms-lms-import-preview__modules">
+				<?php foreach ( $modules as $index => $module ) : ?>
+					<li>
+						<strong><?php echo esc_html( $module['title'] ?? sprintf( __( 'Module %d', 'masterstudy-lms-content-importer' ), $index + 1 ) ); ?></strong>
+						<?php
+						$lessons = isset( $module['lessons'] ) && is_array( $module['lessons'] ) ? $module['lessons'] : array();
+						?>
+						<?php if ( ! empty( $lessons ) ) : ?>
+							<ul class="ms-lms-import-preview__lessons">
+								<?php foreach ( $lessons as $lesson_index => $lesson ) : ?>
+									<li><?php echo esc_html( $lesson['title'] ?? sprintf( __( 'Lesson %d', 'masterstudy-lms-content-importer' ), $lesson_index + 1 ) ); ?></li>
+								<?php endforeach; ?>
+							</ul>
+						<?php endif; ?>
+						<?php
+						$quiz        = $module['quiz'] ?? array();
+						$question_count = isset( $quiz['questions'] ) && is_array( $quiz['questions'] ) ? count( $quiz['questions'] ) : 0;
+						?>
+						<p class="ms-lms-import-preview__quiz">
+							<?php
+							echo esc_html(
+								sprintf(
+									/* translators: 1: question count */
+									_n(
+										'%d quiz question detected.',
+										'%d quiz questions detected.',
+										$question_count,
+										'masterstudy-lms-content-importer'
+									),
+									$question_count
+								)
+							);
+							?>
+						</p>
+					</li>
+				<?php endforeach; ?>
+			</ol>
+			<form method="post" class="ms-lms-import-preview__actions">
+				<?php wp_nonce_field( 'ms_lms_import_course', 'ms_lms_import_nonce' ); ?>
+				<input type="hidden" name="ms_lms_import_confirm" value="1" />
+				<input type="hidden" name="ms_lms_import_token" value="<?php echo esc_attr( $token ); ?>" />
+				<?php submit_button( __( 'Confirm Import', 'masterstudy-lms-content-importer' ), 'primary', 'ms-lms-import-confirm', false ); ?>
+			</form>
+		</div>
+		<?php
 	}
 
 	/**
@@ -382,5 +553,16 @@ class Masterstudy_Lms_Content_Importer_Admin {
 	 */
 	private function sanitize_identifier( string $value ): string {
 		return sanitize_text_field( wp_unslash( $value ) );
+	}
+
+	/**
+	 * Build a transient key for storing import state.
+	 *
+	 * @param string $token Token.
+	 *
+	 * @return string
+	 */
+	private function get_transient_key( string $token ): string {
+		return 'ms_lms_content_import_' . $token;
 	}
 }
