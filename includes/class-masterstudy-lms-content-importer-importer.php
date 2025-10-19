@@ -70,11 +70,12 @@ class Masterstudy_Lms_Content_Importer_Importer {
 			$status
 		);
 
-		$this->create_modules(
-			$course_id,
-			$data['modules'],
-			$options['lesson_title_template']
-		);
+                $this->create_modules(
+                        $course_id,
+                        $data['modules'],
+                        $options['lesson_title_template'],
+                        $file_path
+                );
 
 		return $course_id;
 	}
@@ -180,22 +181,33 @@ class Masterstudy_Lms_Content_Importer_Importer {
 		return (int) $course_id;
 	}
 
-	/**
-	 * Create sections, lessons, and quizzes for each module.
-	 *
-	 * @param int    $course_id             Course ID.
-	 * @param array  $modules               Parsed modules.
-	 * @param string $lesson_title_template Template for fallback lesson titles.
-	 */
-	private function create_modules( int $course_id, array $modules, string $lesson_title_template ): void {
-		$section_repository  = new CurriculumSectionRepository();
-		$material_repository = new CurriculumMaterialRepository();
-		$lesson_repository   = new LessonRepository();
-		$quiz_repository     = new QuizRepository();
-		$question_repository = new QuestionRepository();
-		$section_order       = 0;
+        /**
+         * Create sections, lessons, and quizzes for each module.
+         *
+         * @param int    $course_id             Course ID.
+         * @param array  $modules               Parsed modules.
+         * @param string $lesson_title_template Template for fallback lesson titles.
+         * @param string $source_file_path      Source DOCX file path.
+         */
+        private function create_modules( int $course_id, array $modules, string $lesson_title_template, string $source_file_path ): void {
+                $section_repository  = new CurriculumSectionRepository();
+                $material_repository = new CurriculumMaterialRepository();
+                $lesson_repository   = new LessonRepository();
+                $quiz_repository     = new QuizRepository();
+                $question_repository = new QuestionRepository();
+                $section_order       = 0;
 
-		foreach ( $modules as $module_index => $module ) {
+                $archive = null;
+
+                if ( class_exists( ZipArchive::class ) ) {
+                        $zip = new ZipArchive();
+
+                        if ( true === $zip->open( $source_file_path ) ) {
+                                $archive = $zip;
+                        }
+                }
+
+                foreach ( $modules as $module_index => $module ) {
 			$section_order++;
 			$module_title = $this->ensure_numbered_module_title( $module['title'] ?? '', $module_index + 1 );
 
@@ -221,26 +233,37 @@ class Masterstudy_Lms_Content_Importer_Importer {
 				);
 			}
 
-			foreach ( $lessons as $lesson_index => $lesson ) {
-					$title = isset( $lesson['title'] ) ? trim( $lesson['title'] ) : '';
+                        foreach ( $lessons as $lesson_index => $lesson ) {
+                                $title = isset( $lesson['title'] ) ? trim( $lesson['title'] ) : '';
 
-					if ( '' === $title ) {
-						$title = $this->format_lesson_title(
-							$lesson_title_template,
-							$module_title,
-							$module_index + 1,
-							$lesson_index + 1,
-							''
-						);
-					}
+                                if ( '' === $title ) {
+                                        $title = $this->format_lesson_title(
+                                                $lesson_title_template,
+                                                $module_title,
+                                                $module_index + 1,
+                                                $lesson_index + 1,
+                                                ''
+                                        );
+                                }
 
-					$lesson_id = $lesson_repository->create(
-						array(
-							'title'   => $title,
-						'content' => $lesson['content'] ?? '',
-						'type'    => LessonType::TEXT,
-					)
-				);
+                                $content = isset( $lesson['content'] ) ? $lesson['content'] : '';
+                                $media   = isset( $lesson['media'] ) && is_array( $lesson['media'] ) ? $lesson['media'] : array();
+
+                                if ( ! empty( $media ) ) {
+                                        $content = $this->replace_media_placeholders( $content, $media, $archive );
+                                }
+
+                                if ( function_exists( 'wp_kses_post' ) ) {
+                                        $content = wp_kses_post( $content );
+                                }
+
+                                $lesson_id = $lesson_repository->create(
+                                        array(
+                                                'title'   => $title,
+                                                'content' => $content,
+                                                'type'    => LessonType::TEXT,
+                                        )
+                                );
 
                                 $material_repository->create(
                                         array(
@@ -304,8 +327,89 @@ class Masterstudy_Lms_Content_Importer_Importer {
                                         'order'      => ++$material_order,
                                 )
                         );
-		}
-	}
+                }
+
+                if ( $archive ) {
+                        $archive->close();
+                }
+        }
+
+        /**
+         * Replace DOCX media placeholders with uploaded attachment markup.
+         *
+         * @param string           $content  Lesson content containing placeholders.
+         * @param array<string,array{target:string,alt?:string}> $media_map Placeholder map.
+         * @param ZipArchive|null  $archive  Open DOCX archive.
+         *
+         * @return string
+         */
+        private function replace_media_placeholders( string $content, array $media_map, $archive ): string {
+                if ( '' === $content || empty( $media_map ) || ! $archive ) {
+                        return $content;
+                }
+
+                if ( ! function_exists( 'media_handle_sideload' ) ) {
+                        require_once ABSPATH . 'wp-admin/includes/file.php';
+                        require_once ABSPATH . 'wp-admin/includes/media.php';
+                        require_once ABSPATH . 'wp-admin/includes/image.php';
+                }
+
+                foreach ( $media_map as $placeholder => $data ) {
+                        $target = isset( $data['target'] ) ? trim( $data['target'] ) : '';
+
+                        if ( '' === $placeholder || '' === $target ) {
+                                continue;
+                        }
+
+                        $file_contents = $archive->getFromName( $target );
+
+                        if ( false === $file_contents ) {
+                                continue;
+                        }
+
+                        $tmp_file = wp_tempnam( basename( $target ) );
+
+                        if ( ! $tmp_file ) {
+                                continue;
+                        }
+
+                        $bytes_written = file_put_contents( $tmp_file, $file_contents );
+
+                        if ( false === $bytes_written ) {
+                                @unlink( $tmp_file );
+                                continue;
+                        }
+
+                        $file_array = array(
+                                'name'     => basename( $target ),
+                                'tmp_name' => $tmp_file,
+                        );
+
+                        $attachment_id = media_handle_sideload( $file_array, 0 );
+
+                        if ( is_wp_error( $attachment_id ) ) {
+                                @unlink( $tmp_file );
+                                continue;
+                        }
+
+                        @unlink( $tmp_file );
+
+                        $url = wp_get_attachment_url( $attachment_id );
+
+                        if ( ! $url ) {
+                                continue;
+                        }
+
+                        $alt     = isset( $data['alt'] ) ? trim( $data['alt'] ) : '';
+                        $alt_attr = '' !== $alt ? sprintf( ' alt="%s"', esc_attr( $alt ) ) : '';
+
+                        $image_tag = sprintf( '<img src="%s"%s />', esc_url( $url ), $alt_attr );
+
+                        $content = str_replace( $placeholder, $image_tag, $content );
+                }
+
+                return $content;
+        }
 
 	/**
 	 * Ensure module titles include numbering.
