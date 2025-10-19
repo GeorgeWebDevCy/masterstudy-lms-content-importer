@@ -111,41 +111,92 @@ class Masterstudy_Lms_Content_Importer_Admin {
 			$this->handle_import_request();
 		}
 
-		?>
-		<div class="wrap">
-			<h1><?php esc_html_e( 'Import Course from Word Document', 'masterstudy-lms-content-importer' ); ?></h1>
-			<?php $this->render_messages(); ?>
-			<p>
-				<?php esc_html_e( 'Upload a .docx file that follows the MasterStudy LMS curriculum structure (Modules, practical exercises, and tests). The importer will create a new course with sections, lessons, and quizzes.', 'masterstudy-lms-content-importer' ); ?>
-			</p>
-			<form method="post" enctype="multipart/form-data">
-				<?php wp_nonce_field( 'ms_lms_import_course', 'ms_lms_import_nonce' ); ?>
-				<table class="form-table" role="presentation">
-					<tr>
-						<th scope="row">
-							<label for="ms_lms_import_docx"><?php esc_html_e( 'Word Document (.docx)', 'masterstudy-lms-content-importer' ); ?></label>
-						</th>
-						<td>
-							<input type="file" id="ms_lms_import_docx" name="ms_lms_import_docx" accept=".docx" required />
-						</td>
-					</tr>
-				</table>
-				<?php submit_button( __( 'Import Course', 'masterstudy-lms-content-importer' ) ); ?>
-			</form>
-		</div>
-		<?php
+                $lesson_template_value = isset( $_POST['ms_lms_lesson_template'] ) ? sanitize_text_field( wp_unslash( $_POST['ms_lms_lesson_template'] ) ) : __( 'Overview', 'masterstudy-lms-content-importer' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+                $identifier_patterns_value = isset( $_POST['ms_lms_identifier_patterns'] ) ? sanitize_textarea_field( wp_unslash( $_POST['ms_lms_identifier_patterns'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+
+                ?>
+                <div class="wrap">
+                        <h1><?php esc_html_e( 'Import Course from Word Document', 'masterstudy-lms-content-importer' ); ?></h1>
+                        <?php $this->render_messages(); ?>
+                        <p>
+                                <?php esc_html_e( 'Upload a .docx file that follows the MasterStudy LMS curriculum structure (Modules, practical exercises, and tests). The importer will create a new course with sections, lessons, and quizzes.', 'masterstudy-lms-content-importer' ); ?>
+                        </p>
+                        <form method="post" enctype="multipart/form-data">
+                                <?php wp_nonce_field( 'ms_lms_import_course', 'ms_lms_import_nonce' ); ?>
+                                <table class="form-table" role="presentation">
+                                        <tr>
+                                                <th scope="row">
+                                                        <label for="ms_lms_import_docx"><?php esc_html_e( 'Word Document (.docx)', 'masterstudy-lms-content-importer' ); ?></label>
+                                                </th>
+                                                <td>
+                                                        <input type="file" id="ms_lms_import_docx" name="ms_lms_import_docx" accept=".docx" required />
+                                                </td>
+                                        </tr>
+                                        <tr>
+                                                <th scope="row">
+                                                        <label for="ms_lms_lesson_template"><?php esc_html_e( 'Lesson title template', 'masterstudy-lms-content-importer' ); ?></label>
+                                                </th>
+                                                <td>
+                                                        <input type="text" id="ms_lms_lesson_template" name="ms_lms_lesson_template" class="regular-text" value="<?php echo esc_attr( $lesson_template_value ); ?>" />
+                                                        <p class="description">
+                                                                <?php esc_html_e( 'Define how lesson titles should be generated. Use placeholders such as the module title (e.g., “{{module}} Overview”).', 'masterstudy-lms-content-importer' ); ?>
+                                                        </p>
+                                                </td>
+                                        </tr>
+                                        <tr>
+                                                <th scope="row">
+                                                        <label for="ms_lms_identifier_patterns"><?php esc_html_e( 'Module and lesson identifier patterns', 'masterstudy-lms-content-importer' ); ?></label>
+                                                </th>
+                                                <td>
+                                                        <textarea id="ms_lms_identifier_patterns" name="ms_lms_identifier_patterns" class="large-text" rows="4" placeholder="<?php echo esc_attr__( 'Example: /^Module\\s+/i\nLesson:', 'masterstudy-lms-content-importer' ); ?>"><?php echo esc_textarea( $identifier_patterns_value ); ?></textarea>
+                                                        <p class="description">
+                                                                <?php esc_html_e( 'Provide one pattern per line to help the importer recognise module and lesson headings. Patterns can be regular expressions or keyword hints.', 'masterstudy-lms-content-importer' ); ?>
+                                                        </p>
+                                                </td>
+                                        </tr>
+                                </table>
+                                <?php submit_button( __( 'Import Course', 'masterstudy-lms-content-importer' ) ); ?>
+                        </form>
+                </div>
+                <?php
 	}
 
 	/**
 	 * Handle uploaded DOCX and trigger importer.
 	 */
-	private function handle_import_request() {
-		check_admin_referer( 'ms_lms_import_course', 'ms_lms_import_nonce' );
+        private function handle_import_request() {
+                check_admin_referer( 'ms_lms_import_course', 'ms_lms_import_nonce' );
 
-		if ( empty( $_FILES['ms_lms_import_docx']['name'] ) ) { // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash
-			$this->add_message( 'error', __( 'Please select a DOCX file to import.', 'masterstudy-lms-content-importer' ) );
-			return;
-		}
+                $lesson_template = __( 'Overview', 'masterstudy-lms-content-importer' );
+
+                if ( isset( $_POST['ms_lms_lesson_template'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+                        $lesson_template = sanitize_text_field( wp_unslash( $_POST['ms_lms_lesson_template'] ) );
+
+                        if ( '' === $lesson_template ) {
+                                $lesson_template = __( 'Overview', 'masterstudy-lms-content-importer' );
+                        }
+                }
+
+                $identifier_patterns_input = '';
+                $identifier_patterns        = array();
+
+                if ( isset( $_POST['ms_lms_identifier_patterns'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+                        $identifier_patterns_input = sanitize_textarea_field( wp_unslash( $_POST['ms_lms_identifier_patterns'] ) );
+
+                        if ( '' !== $identifier_patterns_input ) {
+                                $identifier_patterns = array_filter(
+                                        array_map(
+                                                'trim',
+                                                preg_split( '/[\r\n]+/', $identifier_patterns_input )
+                                        )
+                                );
+                        }
+                }
+
+                if ( empty( $_FILES['ms_lms_import_docx']['name'] ) ) { // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash
+                        $this->add_message( 'error', __( 'Please select a DOCX file to import.', 'masterstudy-lms-content-importer' ) );
+                        return;
+                }
 
 		require_once ABSPATH . 'wp-admin/includes/file.php';
 
@@ -172,16 +223,18 @@ class Masterstudy_Lms_Content_Importer_Admin {
 		}
 
 		try {
-			$parser   = new Masterstudy_Lms_Content_Importer_Docx_Parser();
-			$importer = new Masterstudy_Lms_Content_Importer_Importer( $parser );
+                        $parser   = new Masterstudy_Lms_Content_Importer_Docx_Parser();
+                        $importer = new Masterstudy_Lms_Content_Importer_Importer( $parser );
 
-			$course_id = $importer->import(
-				$file_path,
-				array(
-					'author_id' => get_current_user_id(),
-					'status'    => 'publish',
-				)
-			);
+                        $course_id = $importer->import(
+                                $file_path,
+                                array(
+                                        'author_id'             => get_current_user_id(),
+                                        'status'                => 'publish',
+                                        'lesson_title_template' => $lesson_template,
+                                        'identifier_patterns'   => $identifier_patterns,
+                                )
+                        );
 
 			$edit_link = get_edit_post_link( $course_id );
 
