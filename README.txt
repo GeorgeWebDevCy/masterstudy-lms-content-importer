@@ -4,7 +4,7 @@ Donate link: https://www.georgenicolaou.me/
 Tags: lms, masterstudy, course import, docx, education
 Requires at least: 5.8
 Tested up to: 6.5
-Stable tag: 1.13.1
+Stable tag: 1.13.2
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -51,6 +51,9 @@ The importer renames them to quizzes, migrates detected questions, and attaches 
 
 == Changelog ==
 
+= 1.13.2 =
+* Convert DOCX media reference lines (for example, “Video: "Title" (YouTube) : URL”) into embedded players and strip the helper text.
+
 = 1.13.1 =
 * Convert YouTube hyperlinks into embedded videos during DOCX imports.
 
@@ -76,6 +79,9 @@ The importer renames them to quizzes, migrates detected questions, and attaches 
 * Added page skip option and improved quiz title conversion.
 
 == Upgrade Notice ==
+
+= 1.13.2 =
+Converts DOCX media reference lines into embedded players so lessons no longer show the raw helper text.
 
 = 1.13.1 =
 Ensures YouTube links embedded in DOCX lessons appear as playable videos after import.
