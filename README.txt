@@ -4,7 +4,7 @@ Donate link: https://www.georgenicolaou.me/
 Tags: lms, masterstudy, course import, docx, education
 Requires at least: 5.8
 Tested up to: 6.5
-Stable tag: 1.12.0
+Stable tag: 1.12.1
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -51,11 +51,17 @@ The importer renames them to quizzes, migrates detected questions, and attaches 
 
 == Changelog ==
 
+= 1.12.1 =
+* Prevent fatal errors on servers missing the DOM PHP extension by showing a clear requirement message after file upload.
+
 = 1.12.0 =
 * Detect modules and lessons directly from heading levels without requiring a table of contents.
 * Added page skip option and improved quiz title conversion.
 
 == Upgrade Notice ==
+
+= 1.12.1 =
+Shows a friendly message if the DOM PHP extension is missing instead of crashing after uploads—update to avoid fatal errors on restrictive hosts.
 
 = 1.12.0 =
 Parsing now derives modules/lessons from heading levels and respects the "Skip pages before" option—update for accurate imports.
