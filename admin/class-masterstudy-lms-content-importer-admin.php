@@ -88,13 +88,14 @@ class Masterstudy_Lms_Content_Importer_Admin {
 	 * Register the admin menu item.
 	 */
 	public function register_menu_page() {
-		add_submenu_page(
-			'stm-lms-settings',
+		add_menu_page(
 			__( 'Word Course Importer', 'masterstudy-lms-content-importer' ),
 			__( 'Course Importer', 'masterstudy-lms-content-importer' ),
 			'manage_options',
 			'masterstudy-lms-content-importer',
-			array( $this, 'render_import_page' )
+			array( $this, 'render_import_page' ),
+			'dashicons-upload',
+			59
 		);
 	}
 
