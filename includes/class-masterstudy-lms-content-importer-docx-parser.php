@@ -98,6 +98,7 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 					'lesson_counter' => 0,
 					'module_index'   => $module_index,
 					'quiz_lines'     => array(),
+					'quiz_heading'   => '',
 				);
 
 				$current_lesson  = null;
@@ -112,6 +113,7 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 
 			if ( preg_match( '/^Test\b/i', $text ) ) {
 				$this->finalize_current_lesson( $current_module, $current_lesson, $options['lesson_title_template'] );
+				$current_module['quiz_heading'] = $text;
 				$collecting_test = true;
 				continue;
 			}
@@ -221,6 +223,7 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 	 */
 	private function finalize_module( array $module, string $lesson_title_template ): array {
 		$module_title = $this->format_module_title( $module['title'], $module['module_index'] );
+		$quiz_title   = $this->format_quiz_title( $module['quiz_heading'] ?? '', $module_title );
 		$lessons      = $module['lessons'];
 
 		if ( empty( $lessons ) ) {
@@ -236,13 +239,45 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 			);
 		}
 
-		$quiz = $this->parse_quiz( $module['quiz_lines'] ?? array(), $module_title );
+		$quiz = $this->parse_quiz( $module['quiz_lines'] ?? array(), $quiz_title );
 
 		return array(
 			'title'   => $module_title,
 			'lessons' => $lessons,
 			'quiz'    => $quiz,
 		);
+	}
+
+	/**
+	 * Normalize quiz title, converting "Test" headings to "Quiz".
+	 *
+	 * @param string $heading      Heading text from document.
+	 * @param string $module_title Normalized module title.
+	 *
+	 * @return string
+	 */
+	private function format_quiz_title( string $heading, string $module_title ): string {
+		$heading = trim( $heading );
+
+		if ( '' === $heading ) {
+			return sprintf( '%s %s', $module_title, __( 'Quiz', 'masterstudy-lms-content-importer' ) );
+		}
+
+		if ( preg_match( '/^Test(.*)$/i', $heading, $matches ) ) {
+			$suffix = trim( $matches[1] );
+
+			if ( '' === $suffix ) {
+				return __( 'Quiz', 'masterstudy-lms-content-importer' );
+			}
+
+			return sprintf(
+				/* translators: 1: quiz suffix */
+				__( 'Quiz %s', 'masterstudy-lms-content-importer' ),
+				$suffix
+			);
+		}
+
+		return sprintf( '%s %s', $module_title, __( 'Quiz', 'masterstudy-lms-content-importer' ) );
 	}
 
 	/**
@@ -479,23 +514,21 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 			'%lesson_source_title%' => $lesson_source_title,
 		);
 
-		$title  = trim( strtr( $template, $replacements ) );
-		$prefix = sprintf(
-			/* translators: 1: module index, 2: lesson index */
-			__( 'Lesson %1$d.%2$d', 'masterstudy-lms-content-importer' ),
-			$module_index,
-			$lesson_index
-		);
+		$title_body = trim( strtr( $template, $replacements ) );
+		if ( '' === $title_body ) {
+			$title_body = $lesson_source_title;
+		}
+		$prefix = sprintf( '%d.%d', $module_index, $lesson_index );
 
-		if ( '' === $title ) {
+		if ( '' === $title_body ) {
 			return $prefix;
 		}
 
-		if ( stripos( $title, $prefix ) === 0 ) {
-			return $title;
+		if ( preg_match( '/^' . preg_quote( $prefix, '/' ) . '\\b/', $title_body ) ) {
+			return $title_body;
 		}
 
-		return $prefix . ' ' . $title;
+		return $prefix . ' ' . $title_body;
 	}
 
 	/**
@@ -517,16 +550,18 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 			);
 		}
 
-		if ( preg_match( '/module\\s+\\d+/i', $title ) ) {
-			return $title;
+		if ( preg_match( '/module\\s+(\\d+)[\\.\\s:-]*(.*)/i', $title, $matches ) ) {
+			$index = (int) $matches[1];
+			$rest  = trim( $matches[2] ?? '' );
+
+			if ( '' === $rest ) {
+				return sprintf( '%d.', $index );
+			}
+
+			return sprintf( '%d. %s', $index, $rest );
 		}
 
-		return sprintf(
-			/* translators: 1: module index, 2: module title */
-			__( 'Module %1$d: %2$s', 'masterstudy-lms-content-importer' ),
-			$module_index,
-			$title
-		);
+		return sprintf( '%d. %s', $module_index, $title );
 	}
 
 	/**

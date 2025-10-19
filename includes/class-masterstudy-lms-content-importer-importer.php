@@ -250,9 +250,9 @@ class Masterstudy_Lms_Content_Importer_Importer {
 			}
 
 			$quiz_data = $module['quiz'];
-			if ( empty( $quiz_data['title'] ) ) {
-				$quiz_data['title'] = $module_title;
-			}
+			$quiz_title = ! empty( $quiz_data['title'] )
+				? $quiz_data['title']
+				: sprintf( '%s %s', $module_title, __( 'Quiz', 'masterstudy-lms-content-importer' ) );
 
 			if ( empty( $quiz_data['questions'] ) ) {
 				continue;
@@ -288,7 +288,7 @@ class Masterstudy_Lms_Content_Importer_Importer {
 
 			$quiz_id = $quiz_repository->create(
 				array(
-					'title'     => $quiz_data['title'] . ' Quiz',
+					'title'     => $quiz_title,
 					'content'   => '',
 					'questions' => $question_ids,
 					'style'     => 'default',
@@ -316,23 +316,25 @@ class Masterstudy_Lms_Content_Importer_Importer {
 		$title = trim( $title );
 
 		if ( '' === $title ) {
-			return sprintf(
-				/* translators: %s: module index */
-				__( 'Module %d', 'masterstudy-lms-content-importer' ),
-				$module_index
-			);
+			return sprintf( '%d.', $module_index );
 		}
 
-		if ( preg_match( '/module\\s+\\d+/i', $title ) ) {
+		if ( preg_match( '/^\\d+\\./', $title ) ) {
 			return $title;
 		}
 
-		return sprintf(
-			/* translators: 1: module index, 2: module title */
-			__( 'Module %1$d: %2$s', 'masterstudy-lms-content-importer' ),
-			$module_index,
-			$title
-		);
+		if ( preg_match( '/module\\s+(\\d+)[\\.\\s:-]*(.*)/i', $title, $matches ) ) {
+			$index = (int) $matches[1];
+			$rest  = trim( $matches[2] ?? '' );
+
+			if ( '' === $rest ) {
+				return sprintf( '%d.', $index );
+			}
+
+			return sprintf( '%d. %s', $index, $rest );
+		}
+
+		return sprintf( '%d. %s', $module_index, $title );
 	}
 
 	/**
@@ -360,22 +362,22 @@ class Masterstudy_Lms_Content_Importer_Importer {
 			'%lesson_source_title%' => $lesson_source_title,
 		);
 
-		$title  = trim( strtr( $template, $replacements ) );
-		$prefix = sprintf(
-			/* translators: 1: module index, 2: lesson index */
-			__( 'Lesson %1$d.%2$d', 'masterstudy-lms-content-importer' ),
-			$module_index,
-			$lesson_index
-		);
+		$title_body = trim( strtr( $template, $replacements ) );
 
-		if ( '' === $title ) {
+		if ( '' === $title_body ) {
+			$title_body = trim( $lesson_source_title );
+		}
+
+		$prefix = sprintf( '%d.%d', $module_index, $lesson_index );
+
+		if ( '' === $title_body ) {
 			return $prefix;
 		}
 
-		if ( stripos( $title, $prefix ) === 0 ) {
-			return $title;
+		if ( preg_match( '/^' . preg_quote( $prefix, '/' ) . '\\b/', $title_body ) ) {
+			return $title_body;
 		}
 
-		return $prefix . ' ' . $title;
+		return $prefix . ' ' . $title_body;
 	}
 }
