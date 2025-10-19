@@ -485,7 +485,7 @@ class Masterstudy_Lms_Content_Importer_Admin {
 			<ol class="ms-lms-import-preview__modules">
 				<?php foreach ( $modules as $index => $module ) : ?>
 					<li>
-						<strong><?php echo esc_html( $module['title'] ?? sprintf( __( 'Module %d', 'masterstudy-lms-content-importer' ), $index + 1 ) ); ?></strong>
+						<strong><?php echo esc_html( $module['title'] ?? sprintf( __( 'MODULE %d', 'masterstudy-lms-content-importer' ), $index + 1 ) ); ?></strong>
 						<?php
 						$lessons = isset( $module['lessons'] ) && is_array( $module['lessons'] ) ? $module['lessons'] : array();
 						?>
@@ -537,7 +537,7 @@ class Masterstudy_Lms_Content_Importer_Admin {
 	private function get_default_form_values(): array {
 		return array(
 			'lesson_title_template' => '%lesson_source_title%',
-			'module_identifier'     => 'Module',
+			'module_identifier'     => 'MODULE',
 			'lesson_identifier'     => '',
 			'use_toc'               => true,
 		);

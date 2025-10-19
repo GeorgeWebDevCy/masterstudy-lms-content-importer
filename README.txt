@@ -4,7 +4,7 @@ Donate link: https://www.georgenicolaou.me/
 Tags: lms, masterstudy, course import, docx, education
 Requires at least: 5.8
 Tested up to: 6.5
-Stable tag: 1.12.2
+Stable tag: 1.12.3
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -51,6 +51,9 @@ The importer renames them to quizzes, migrates detected questions, and attaches 
 
 == Changelog ==
 
+= 1.12.3 =
+* Default module titles now use the "MODULE X. Module Title" pattern throughout parsing and import previews.
+
 = 1.12.2 =
 * Prevent fatal errors when the first detected heading belongs to a module without an initialized lesson by skipping lesson finalization until both structures are available.
 
@@ -62,6 +65,9 @@ The importer renames them to quizzes, migrates detected questions, and attaches 
 * Added page skip option and improved quiz title conversion.
 
 == Upgrade Notice ==
+
+= 1.12.3 =
+Ensures all imported modules follow the "MODULE X. Module Title" naming pattern by default—update for consistent numbering.
 
 = 1.12.2 =
 Fixes a fatal error triggered during DOCX parsing when a module heading appears before any lessons—update to ensure imports complete successfully.

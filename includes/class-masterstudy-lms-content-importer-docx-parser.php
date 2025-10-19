@@ -29,7 +29,7 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 		$options = array_merge(
 			array(
 				'lesson_title_template' => '%lesson_source_title%',
-				'module_identifier'     => 'Module',
+				'module_identifier'     => 'MODULE',
 				'lesson_identifier'     => '',
 				'use_toc'               => true,
 				'start_page'            => 1,
@@ -526,25 +526,62 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 		$title = trim( $title );
 
 		if ( '' === $title ) {
+			return $this->build_module_title_with_prefix( $module_index, '' );
+		}
+
+		if ( preg_match( '/module\s+(\d+)[\.\s:-]*(.*)/i', $title, $matches ) ) {
+			$index = (int) $matches[1];
+			$rest  = isset( $matches[2] ) ? $this->trim_module_rest( $matches[2] ) : '';
+
+			return $this->build_module_title_with_prefix( $index, $rest );
+		}
+
+		if ( preg_match( '/^(\d+)\.?\s*(.*)$/', $title, $matches ) ) {
+			$index = (int) $matches[1];
+			$rest  = isset( $matches[2] ) ? $this->trim_module_rest( $matches[2] ) : '';
+
+			return $this->build_module_title_with_prefix( $index, $rest );
+		}
+
+		return $this->build_module_title_with_prefix( $module_index, $this->trim_module_rest( $title ) );
+	}
+
+	/**
+	 * Trim punctuation from detected module title suffixes.
+	 *
+	 * @param string $title Module suffix.
+	 *
+	 * @return string
+	 */
+	private function trim_module_rest( string $title ): string {
+		return trim( ltrim( $title, " .:-" ) );
+	}
+
+	/**
+	 * Build the final module title string prefixed with MODULE.
+	 *
+	 * @param int    $module_index Module index (1-based).
+	 * @param string $module_title Module suffix.
+	 *
+	 * @return string
+	 */
+	private function build_module_title_with_prefix( int $module_index, string $module_title ): string {
+		$module_title = trim( $module_title );
+
+		if ( '' === $module_title ) {
 			return sprintf(
 				/* translators: %s: module index */
-				__( 'Module %d', 'masterstudy-lms-content-importer' ),
+				__( 'MODULE %d', 'masterstudy-lms-content-importer' ),
 				$module_index
 			);
 		}
 
-		if ( preg_match( '/module\\s+(\\d+)[\\.\\s:-]*(.*)/i', $title, $matches ) ) {
-			$index = (int) $matches[1];
-			$rest  = trim( $matches[2] ?? '' );
-
-			if ( '' === $rest ) {
-				return sprintf( '%d.', $index );
-			}
-
-			return sprintf( '%d. %s', $index, $rest );
-		}
-
-		return sprintf( '%d. %s', $module_index, $title );
+		return sprintf(
+			/* translators: 1: module index, 2: module title */
+			__( 'MODULE %1$d. %2$s', 'masterstudy-lms-content-importer' ),
+			$module_index,
+			$module_title
+		);
 	}
 
 	/**
