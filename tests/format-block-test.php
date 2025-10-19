@@ -32,6 +32,12 @@ if ( ! function_exists( 'wpautop' ) ) {
     }
 }
 
+if ( ! function_exists( 'shortcode_unautop' ) ) {
+    function shortcode_unautop( string $html ): string {
+        return preg_replace( '/<p>\s*(\[embed\].*?\[\/embed\])\s*<\/p>/i', '$1', $html );
+    }
+}
+
 if ( ! function_exists( 'wp_kses_post' ) ) {
     function wp_kses_post( string $text ): string {
         $text = preg_replace( '/<script\b[^>]*>(.*?)<\/script>/is', '', $text );
@@ -89,6 +95,7 @@ assert_contains( $anchor_line, $anchor_result, 'Anchor tags should remain untouc
 $youtube_anchor   = '<a href="https://www.youtube.com/watch?v=dBn0ETS6XDk" target="_blank" rel="noopener">https://www.youtube.com/watch?v=dBn0ETS6XDk</a>';
 $youtube_anchor_result = $method->invoke( $parser, array( $youtube_anchor ) );
 assert_contains( '[embed]https://www.youtube.com/watch?v=dBn0ETS6XDk[/embed]', $youtube_anchor_result, 'YouTube anchor tags should be converted into embed shortcodes.' );
+assert_not_contains( '<p>[embed]https://www.youtube.com/watch?v=dBn0ETS6XDk[/embed]</p>', $youtube_anchor_result, 'Embed shortcodes should not be wrapped in paragraph tags.' );
 
 $composite_result = $method->invoke( $parser, array( 'Intro text', 'https://vimeo.com/12345' ) );
 assert_contains( '<p>Intro text</p>', $composite_result, 'Non-URL lines should remain as paragraphs.' );
