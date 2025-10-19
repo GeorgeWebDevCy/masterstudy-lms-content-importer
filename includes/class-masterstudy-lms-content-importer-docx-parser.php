@@ -1084,12 +1084,24 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
                        $html = '<p>' . nl2br( $text ) . '</p>';
                }
 
+               return $this->sanitize_block_html( $html, $text );
+       }
+
+       /**
+        * Sanitize generated HTML content for safe output.
+        *
+        * @param string $html         Generated HTML.
+        * @param string $fallback_text Original text used to generate the HTML.
+        *
+        * @return string
+        */
+       private function sanitize_block_html( string $html, string $fallback_text ): string {
                if ( function_exists( 'wp_kses_post' ) ) {
                        return wp_kses_post( $html );
                }
 
                if ( function_exists( 'esc_html' ) ) {
-                       return '<p>' . nl2br( esc_html( $text ) ) . '</p>';
+                       return '<p>' . nl2br( esc_html( $fallback_text ) ) . '</p>';
                }
 
                return $html;
