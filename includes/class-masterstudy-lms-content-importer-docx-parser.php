@@ -13,7 +13,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Masterstudy_Lms_Content_Importer_Docx_Parser {
 
-	private const WP_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+       private const WP_NS      = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+       private const REL_NS     = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+       private const PKG_REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
+
+       /**
+        * Relationship map keyed by relationship Id.
+        *
+        * @var array<string, array{target:string, mode:string, type:string}>
+        */
+       private $relationship_map = array();
 
 	/**
 	 * Parse a DOCX file into course/module/lesson/question structure.
@@ -54,9 +63,10 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 		$start_page = max( 1, (int) $options['start_page'] );
 
 		foreach ( $paragraphs as $paragraph ) {
-			$style = $paragraph['style'] ?? '';
-			$text  = isset( $paragraph['text'] ) ? trim( $paragraph['text'] ) : '';
-			$page  = $paragraph['page'] ?? 1;
+                       $style = $paragraph['style'] ?? '';
+                       $text  = isset( $paragraph['text'] ) ? trim( $paragraph['text'] ) : '';
+                       $html  = isset( $paragraph['html'] ) ? trim( $paragraph['html'] ) : $text;
+                       $page  = $paragraph['page'] ?? 1;
 
 			if ( $page < $start_page || '' === $text ) {
 				continue;
@@ -105,7 +115,7 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 			}
 
 			if ( ! $current_module ) {
-				$course_intro[] = $text;
+                               $course_intro[] = $html;
 				continue;
 			}
 
@@ -139,11 +149,11 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 			}
 
 			if ( $collecting_test ) {
-				$current_module['quiz_lines'][] = $text;
-				continue;
-			}
+                                $current_module['quiz_lines'][] = $text;
+                                continue;
+                        }
 
-			if ( null === $current_lesson ) {
+                        if ( null === $current_lesson ) {
 				$current_lesson = array(
 					'title'        => '',
 					'source_title' => '',
@@ -151,7 +161,7 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 				);
 			}
 
-			$current_lesson['content_lines'][] = $text;
+                        $current_lesson['content_lines'][] = $html;
 		}
 
 		if ( $current_module ) {
@@ -292,77 +302,361 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 			throw new RuntimeException( __( 'Unable to open the DOCX file.', 'masterstudy-lms-content-importer' ) );
 		}
 
-		$xml = $zip->getFromName( 'word/document.xml' );
-		$zip->close();
+               $xml       = $zip->getFromName( 'word/document.xml' );
+               $rels_xml  = $zip->getFromName( 'word/_rels/document.xml.rels' );
+               $zip->close();
 
-		if ( false === $xml ) {
-			throw new RuntimeException( __( 'Invalid DOCX structure: missing document.xml.', 'masterstudy-lms-content-importer' ) );
-		}
+               if ( false === $xml ) {
+                       throw new RuntimeException( __( 'Invalid DOCX structure: missing document.xml.', 'masterstudy-lms-content-importer' ) );
+               }
 
-		$doc = new DOMDocument();
-		$doc->preserveWhiteSpace = false;
+               $doc = new DOMDocument();
+               $doc->preserveWhiteSpace = false;
 
-		if ( ! @$doc->loadXML( $xml ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
-			throw new RuntimeException( __( 'Unable to read the DOCX XML content.', 'masterstudy-lms-content-importer' ) );
-		}
+               if ( ! @$doc->loadXML( $xml ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+                       throw new RuntimeException( __( 'Unable to read the DOCX XML content.', 'masterstudy-lms-content-importer' ) );
+               }
 
-		return $doc;
-	}
+               $this->relationship_map = $this->parse_relationships_manifest( $rels_xml );
 
-	/**
-	 * Extract paragraphs with their associated styles.
-	 *
-	 * @param DOMDocument $doc Document object.
-	 *
-	 * @return array<int, array{text:string, style:string}>
-	 */
-	private function extract_paragraphs( DOMDocument $doc ): array {
-		$xpath = new DOMXPath( $doc );
-		$xpath->registerNamespace( 'w', self::WP_NS );
+               return $doc;
+       }
 
-		$paragraphs = array();
-		$page       = 1;
+       /**
+        * Parse the relationship manifest.
+        *
+        * @param string|false $rels_xml Relationship XML string.
+        *
+        * @return array<string, array{target:string, mode:string, type:string}>
+        */
+       private function parse_relationships_manifest( $rels_xml ): array {
+               if ( false === $rels_xml || '' === trim( $rels_xml ) ) {
+                       return array();
+               }
 
-		foreach ( $xpath->query( '//w:p' ) as $paragraph ) {
-			foreach ( $xpath->query( './/w:br[@w:type="page"]', $paragraph ) as $unused ) {
-				$page++;
-			}
+               $manifest = new DOMDocument();
+               $manifest->preserveWhiteSpace = false;
 
-			$text = '';
+               if ( ! @$manifest->loadXML( $rels_xml ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+                       return array();
+               }
 
-			foreach ( $xpath->query( './/w:t', $paragraph ) as $text_node ) {
-				$text .= $text_node->nodeValue;
-			}
+               $xpath = new DOMXPath( $manifest );
+               $xpath->registerNamespace( 'rel', self::PKG_REL_NS );
 
-			$text  = preg_replace( '/\s+/u', ' ', trim( $text ) );
-			$style = '';
+               $map = array();
 
-			/** @var DOMNode $paragraph */
-			$style_node = $xpath->query( './w:pPr/w:pStyle', $paragraph )->item( 0 );
+               foreach ( $xpath->query( '/rel:Relationships/rel:Relationship' ) as $relationship ) {
+                       if ( ! $relationship instanceof DOMElement ) {
+                               continue;
+                       }
 
-			if ( $style_node instanceof DOMNode ) {
-				$style = $style_node->attributes->getNamedItemNS( self::WP_NS, 'val' );
-				$style = $style ? $style->nodeValue : '';
-			}
+                       $id     = $relationship->getAttribute( 'Id' );
+                       $target = $relationship->getAttribute( 'Target' );
+                       $type   = $relationship->getAttribute( 'Type' );
 
-			if ( '' !== $text ) {
-				$paragraphs[] = array(
-					'text'  => $text,
-					'style' => $style,
-					'page'  => $page,
-				);
-			}
-		}
+                       if ( '' === $id || '' === $target ) {
+                               continue;
+                       }
 
-		return $paragraphs;
-	}
+                       $map[ $id ] = array(
+                               'target' => $target,
+                               'mode'   => $relationship->getAttribute( 'TargetMode' ),
+                               'type'   => $type,
+                       );
+               }
 
-	/**
-	 * Build TOC hierarchy from paragraphs.
-	 *
-	 * @param array $paragraphs Paragraph collection.
-	 *
-	 * @return array<int, array{title:string,label:string,lessons:array<int, array{title:string,label:string}>}>
+               return $map;
+       }
+
+       /**
+         * Extract paragraphs with their associated styles.
+         *
+         * @param DOMDocument $doc Document object.
+        *
+        * @return array<int, array{text:string, style:string, html?:string}>
+         */
+        private function extract_paragraphs( DOMDocument $doc ): array {
+                $xpath = new DOMXPath( $doc );
+                $xpath->registerNamespace( 'w', self::WP_NS );
+
+                $paragraphs = array();
+                $page       = 1;
+
+               foreach ( $xpath->query( '//w:p' ) as $paragraph ) {
+                       if ( ! $paragraph instanceof DOMElement ) {
+                               continue;
+                       }
+
+                        foreach ( $xpath->query( './/w:br[@w:type="page"]', $paragraph ) as $unused ) {
+                                $page++;
+                        }
+
+                       $tokens = $this->collect_paragraph_tokens( $paragraph, $xpath );
+                       $text   = '';
+
+                       foreach ( $tokens as $token ) {
+                               $text .= $token['text'];
+                       }
+
+                       if ( '' === $text ) {
+                               foreach ( $xpath->query( './/w:t', $paragraph ) as $text_node ) {
+                                       $text .= $text_node->nodeValue;
+                               }
+                       }
+
+                       $text  = preg_replace( '/\s+/u', ' ', trim( $text ) );
+                       $style = '';
+
+                        /** @var DOMNode $paragraph */
+                        $style_node = $xpath->query( './w:pPr/w:pStyle', $paragraph )->item( 0 );
+
+                        if ( $style_node instanceof DOMNode ) {
+                                $style = $style_node->attributes->getNamedItemNS( self::WP_NS, 'val' );
+                                $style = $style ? $style->nodeValue : '';
+                        }
+
+                       if ( '' !== $text ) {
+                               $entry = array(
+                                       'text'  => $text,
+                                       'style' => $style,
+                                       'page'  => $page,
+                               );
+
+                               $html = $this->build_paragraph_html( $tokens );
+
+                               if ( '' !== $html ) {
+                                       $entry['html'] = $html;
+                               }
+
+                               $paragraphs[] = $entry;
+                        }
+                }
+
+                return $paragraphs;
+        }
+
+        /**
+        * Collect paragraph tokens preserving hyperlink information.
+        *
+        * @param DOMElement $paragraph Paragraph node.
+        * @param DOMXPath   $xpath     XPath helper.
+        *
+        * @return array<int, array{type:string, text:string, href?:string}>
+        */
+       private function collect_paragraph_tokens( DOMElement $paragraph, DOMXPath $xpath ): array {
+               $tokens = array();
+
+               foreach ( $paragraph->childNodes as $child ) {
+                       if ( ! $child instanceof DOMElement ) {
+                               continue;
+                       }
+
+                       if ( self::WP_NS === $child->namespaceURI && 'hyperlink' === $child->localName ) {
+                               $text = $this->collect_node_text( $child, $xpath );
+
+                               if ( '' === $text ) {
+                                       continue;
+                               }
+
+                               $tokens[] = array(
+                                       'type' => 'hyperlink',
+                                       'text' => $text,
+                                       'href' => $this->resolve_hyperlink_href( $child ),
+                               );
+
+                               continue;
+                       }
+
+                       $text = $this->collect_node_text( $child, $xpath );
+
+                       if ( '' === $text ) {
+                               continue;
+                       }
+
+                       $tokens[] = array(
+                               'type' => 'text',
+                               'text' => $text,
+                       );
+               }
+
+               if ( empty( $tokens ) ) {
+                       $text = $this->collect_node_text( $paragraph, $xpath );
+
+                       if ( '' !== $text ) {
+                               $tokens[] = array(
+                                       'type' => 'text',
+                                       'text' => $text,
+                               );
+                       }
+               }
+
+               return $tokens;
+       }
+
+       /**
+        * Retrieve textual content from a node.
+        *
+        * @param DOMNode  $node  Node to inspect.
+        * @param DOMXPath $xpath XPath helper.
+        *
+        * @return string
+        */
+       private function collect_node_text( DOMNode $node, DOMXPath $xpath ): string {
+               $text = '';
+
+               foreach ( $xpath->query( './/w:t', $node ) as $text_node ) {
+                       $text .= $text_node->nodeValue;
+               }
+
+               return $text;
+       }
+
+       /**
+        * Convert paragraph tokens into HTML fragments.
+        *
+        * @param array<int, array{type:string, text:string, href?:string}> $tokens Token list.
+        *
+        * @return string
+        */
+       private function build_paragraph_html( array $tokens ): string {
+               if ( empty( $tokens ) ) {
+                       return '';
+               }
+
+               $fragments = array();
+               $count     = count( $tokens );
+
+               foreach ( $tokens as $index => $token ) {
+                       if ( empty( $token['text'] ) ) {
+                               continue;
+                       }
+
+                       $segment = $this->normalize_text_segment( $token['text'], 0 === $index, $index === $count - 1 );
+
+                       if ( '' === $segment ) {
+                               continue;
+                       }
+
+                       if ( 'hyperlink' === $token['type'] ) {
+                               $href = $token['href'] ?? '';
+
+                               if ( '' === $href ) {
+                                       $fragments[] = $this->escape_html( $segment );
+                                       continue;
+                               }
+
+                               $fragments[] = sprintf(
+                                       '<a href="%s">%s</a>',
+                                       $this->escape_url( $href ),
+                                       $this->escape_html( $segment )
+                               );
+
+                               continue;
+                       }
+
+                       $fragments[] = $this->escape_html( $segment );
+               }
+
+               return trim( implode( '', $fragments ) );
+       }
+
+       /**
+        * Normalize token text to keep whitespace predictable.
+        *
+        * @param string $segment   Text segment.
+        * @param bool   $is_first  Whether this is the first token.
+        * @param bool   $is_last   Whether this is the last token.
+        *
+        * @return string
+        */
+       private function normalize_text_segment( string $segment, bool $is_first, bool $is_last ): string {
+               $normalized = preg_replace( '/\s+/u', ' ', $segment );
+
+               if ( null === $normalized ) {
+                       $normalized = $segment;
+               }
+
+               if ( $is_first ) {
+                       $normalized = ltrim( $normalized );
+               }
+
+               if ( $is_last ) {
+                       $normalized = rtrim( $normalized );
+               }
+
+               return $normalized;
+       }
+
+       /**
+        * Resolve hyperlink target from relationship map.
+        *
+        * @param DOMElement $hyperlink Hyperlink node.
+        *
+        * @return string
+        */
+       private function resolve_hyperlink_href( DOMElement $hyperlink ): string {
+               $anchor = $hyperlink->getAttributeNS( self::WP_NS, 'anchor' );
+
+               if ( '' !== $anchor ) {
+                       return '#' . ltrim( $anchor, '#' );
+               }
+
+               $relationship_id = $hyperlink->getAttributeNS( self::REL_NS, 'id' );
+
+               if ( '' === $relationship_id ) {
+                       return '';
+               }
+
+               if ( ! isset( $this->relationship_map[ $relationship_id ] ) ) {
+                       return '';
+               }
+
+               $relationship = $this->relationship_map[ $relationship_id ];
+
+               if ( empty( $relationship['type'] ) || false === stripos( $relationship['type'], 'hyperlink' ) ) {
+                       return '';
+               }
+
+               return $relationship['target'];
+       }
+
+       /**
+        * Escape text for safe output.
+        *
+        * @param string $text Text to escape.
+        *
+        * @return string
+        */
+       private function escape_html( string $text ): string {
+               if ( function_exists( 'esc_html' ) ) {
+                       return esc_html( $text );
+               }
+
+               return htmlspecialchars( $text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+       }
+
+       /**
+        * Escape URL attribute value for safe output.
+        *
+        * @param string $url URL to escape.
+        *
+        * @return string
+        */
+       private function escape_url( string $url ): string {
+               if ( function_exists( 'esc_url' ) ) {
+                       return esc_url( $url );
+               }
+
+               return htmlspecialchars( $url, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+       }
+
+       /**
+         * Build TOC hierarchy from paragraphs.
+         *
+         * @param array $paragraphs Paragraph collection.
+         *
+         * @return array<int, array{title:string,label:string,lessons:array<int, array{title:string,label:string}>}>
 	 */
 	private function build_toc_structure( array $paragraphs ): array {
 		$modules        = array();
@@ -463,14 +757,28 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 			return '';
 		}
 
-		$text = trim( implode( "\n\n", $lines ) );
+                $text = trim( implode( "\n\n", $lines ) );
 
-		if ( '' === $text ) {
-			return '';
-		}
+                if ( '' === $text ) {
+                        return '';
+                }
 
-		return function_exists( 'wpautop' ) ? wpautop( $text ) : '<p>' . nl2br( esc_html( $text ) ) . '</p>';
-	}
+                if ( function_exists( 'wpautop' ) ) {
+                        $html = wpautop( $text );
+                } else {
+                        $html = '<p>' . nl2br( $text ) . '</p>';
+                }
+
+                if ( function_exists( 'wp_kses_post' ) ) {
+                        return wp_kses_post( $html );
+                }
+
+                if ( function_exists( 'esc_html' ) ) {
+                        return '<p>' . nl2br( esc_html( $text ) ) . '</p>';
+                }
+
+                return $html;
+        }
 
 	/**
 	 * Build lesson title using template fallback.
