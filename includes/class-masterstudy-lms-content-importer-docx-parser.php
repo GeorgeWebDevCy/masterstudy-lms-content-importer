@@ -16,27 +16,32 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 	/**
 	 * Parse a DOCX file into course/module/question structure.
 	 *
-	 * @param string $file_path Absolute path to the uploaded DOCX file.
-	 * @return array
+         * @param string $file_path Absolute path to the uploaded DOCX file.
+         * @param array  $config    Optional configuration (identifier patterns).
+         *
+         * @return array
 	 *
 	 * @throws RuntimeException When the file cannot be parsed.
 	 */
-	public function parse( string $file_path ): array {
-		$paragraphs = $this->extract_paragraphs( $file_path );
+        public function parse( string $file_path, array $config = array() ): array {
+                $paragraphs = $this->extract_paragraphs( $file_path );
 
-		if ( empty( $paragraphs ) ) {
-			throw new RuntimeException( __( 'The document appears to be empty.', 'masterstudy-lms-content-importer' ) );
-		}
+                if ( empty( $paragraphs ) ) {
+                        throw new RuntimeException( __( 'The document appears to be empty.', 'masterstudy-lms-content-importer' ) );
+                }
 
-		$course_title = '';
-		$course_intro = array();
-		$modules      = array();
+                $patterns = $this->prepare_identifier_patterns( $config['identifier_patterns'] ?? array() );
 
-		$current_module = null;
-		$in_test        = false;
+                $course_title = '';
+                $course_intro = array();
+                $modules      = array();
 
-		foreach ( $paragraphs as $paragraph ) {
-			$line = trim( $paragraph );
+                $current_module = null;
+                $current_lesson = null;
+                $in_test        = false;
+
+                foreach ( $paragraphs as $paragraph ) {
+                        $line = trim( $paragraph );
 
 			if ( '' === $line ) {
 				continue;
@@ -46,40 +51,72 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 				$course_title = $line;
 			}
 
-			if ( preg_match( '/^MODULE\s+\d+\.?/i', $line ) ) {
-				if ( ! empty( $current_module ) ) {
-					$modules[] = $this->normalize_module( $current_module );
-				}
+                        if ( $this->is_module_heading( $line, $patterns ) ) {
+                                if ( ! empty( $current_module ) ) {
+                                        if ( ! empty( $current_lesson ) ) {
+                                                $current_module['lessons'][] = $current_lesson;
+                                                $current_lesson              = null;
+                                        }
 
-				$current_module = array(
-					'title'        => $line,
-					'lesson_lines' => array(),
-					'test_lines'   => array(),
-				);
-				$in_test        = false;
-				continue;
-			}
+                                        $modules[] = $this->normalize_module( $current_module );
+                                }
+
+                                $current_module = array(
+                                        'title'        => $line,
+                                        'lesson_lines' => array(),
+                                        'test_lines'   => array(),
+                                        'lessons'      => array(),
+                                );
+                                $in_test        = false;
+                                continue;
+                        }
 
 			if ( empty( $current_module ) ) {
 				$course_intro[] = $line;
 				continue;
 			}
 
-			if ( preg_match( '/^Test\b/i', $line ) ) {
-				$in_test = true;
-				continue;
-			}
+                        if ( preg_match( '/^Test\b/i', $line ) ) {
+                                if ( ! empty( $current_lesson ) ) {
+                                        $current_module['lessons'][] = $current_lesson;
+                                        $current_lesson              = null;
+                                }
 
-			if ( $in_test ) {
-				$current_module['test_lines'][] = $line;
-			} else {
-				$current_module['lesson_lines'][] = $line;
-			}
-		}
+                                $in_test = true;
+                                continue;
+                        }
 
-		if ( ! empty( $current_module ) ) {
-			$modules[] = $this->normalize_module( $current_module );
-		}
+                        if ( $in_test ) {
+                                $current_module['test_lines'][] = $line;
+                        } else {
+                                if ( $this->is_lesson_heading( $line, $patterns ) ) {
+                                        if ( ! empty( $current_lesson ) ) {
+                                                $current_module['lessons'][] = $current_lesson;
+                                        }
+
+                                        $current_lesson = array(
+                                                'title' => $line,
+                                                'lines' => array(),
+                                        );
+                                        continue;
+                                }
+
+                                if ( ! empty( $current_lesson ) ) {
+                                        $current_lesson['lines'][] = $line;
+                                } else {
+                                        $current_module['lesson_lines'][] = $line;
+                                }
+                        }
+                }
+
+                if ( ! empty( $current_module ) ) {
+                        if ( ! empty( $current_lesson ) ) {
+                                $current_module['lessons'][] = $current_lesson;
+                                $current_lesson              = null;
+                        }
+
+                        $modules[] = $this->normalize_module( $current_module );
+                }
 
 		return array(
 			'title'       => $course_title,
@@ -148,16 +185,169 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 	 *
 	 * @return array
 	 */
-	private function normalize_module( array $module ): array {
-		$lesson_html = $this->format_block( $module['lesson_lines'] );
-		$quiz        = $this->parse_quiz( $module['test_lines'], $module['title'] );
+        private function normalize_module( array $module ): array {
+                $lessons = array();
 
-		return array(
-			'title'   => $module['title'],
-			'content' => $lesson_html,
-			'quiz'    => $quiz,
-		);
-	}
+                if ( ! empty( $module['lessons'] ) ) {
+                        foreach ( $module['lessons'] as $lesson ) {
+                                $lessons[] = array(
+                                        'title'   => $lesson['title'],
+                                        'content' => $this->format_block( $lesson['lines'] ?? array() ),
+                                );
+                        }
+                }
+
+                if ( empty( $lessons ) ) {
+                        $lessons[] = array(
+                                'title'   => '',
+                                'content' => $this->format_block( $module['lesson_lines'] ?? array() ),
+                        );
+                }
+
+                $quiz = $this->parse_quiz( $module['test_lines'], $module['title'] );
+
+                return array(
+                        'title'   => $module['title'],
+                        'content' => $lessons[0]['content'],
+                        'lessons' => $lessons,
+                        'quiz'    => $quiz,
+                );
+        }
+
+        /**
+         * Prepare identifier patterns for module and lesson detection.
+         *
+         * @param array $raw_patterns Raw user supplied patterns.
+         *
+         * @return array{module:array<int, array{regex:bool,pattern:string}>, lesson:array<int, array{regex:bool,pattern:string}>, generic:array<int, array{regex:bool,pattern:string}>}
+         */
+        private function prepare_identifier_patterns( array $raw_patterns ): array {
+                $normalized = array(
+                        'module'  => array(),
+                        'lesson'  => array(),
+                        'generic' => array(),
+                );
+
+                foreach ( $raw_patterns as $pattern ) {
+                        if ( '' === $pattern ) {
+                                continue;
+                        }
+
+                        $type = null;
+
+                        if ( false !== stripos( $pattern, 'module:' ) ) {
+                                $type    = 'module';
+                                $pattern = trim( substr( $pattern, stripos( $pattern, 'module:' ) + 7 ) );
+                        } elseif ( false !== stripos( $pattern, 'lesson:' ) ) {
+                                $type    = 'lesson';
+                                $pattern = trim( substr( $pattern, stripos( $pattern, 'lesson:' ) + 7 ) );
+                        } elseif ( false !== stripos( $pattern, 'module' ) ) {
+                                $type = 'module';
+                        } elseif ( false !== stripos( $pattern, 'lesson' ) ) {
+                                $type = 'lesson';
+                        }
+
+                        $stored_pattern = $this->normalize_pattern_definition( $pattern );
+
+                        if ( null === $type ) {
+                                $normalized['generic'][] = $stored_pattern;
+                        } else {
+                                $normalized[ $type ][] = $stored_pattern;
+                        }
+                }
+
+                return $normalized;
+        }
+
+        /**
+         * Normalize pattern definition, turning slash wrapped strings into regexes.
+         *
+         * @param string $pattern Pattern definition.
+         *
+         * @return array{regex:bool,pattern:string}
+         */
+        private function normalize_pattern_definition( string $pattern ): array {
+                $pattern = trim( $pattern );
+
+                if ( 2 <= strlen( $pattern ) && '/' === $pattern[0] ) {
+                        $last_delimiter = strrpos( $pattern, '/' );
+
+                        if ( false !== $last_delimiter && 0 !== $last_delimiter ) {
+                                $modifiers = substr( $pattern, $last_delimiter + 1 );
+                                $body      = substr( $pattern, 1, $last_delimiter - 1 );
+
+                                if ( '' !== $body ) {
+                                        return array(
+                                                'regex'   => true,
+                                                'pattern' => '/' . $body . '/' . $modifiers,
+                                        );
+                                }
+                        }
+                }
+
+                return array(
+                        'regex'   => false,
+                        'pattern' => $pattern,
+                );
+        }
+
+        /**
+         * Check whether the current line represents a module heading.
+         *
+         * @param string $line     Line to inspect.
+         * @param array  $patterns Prepared patterns map.
+         *
+         * @return bool
+         */
+        private function is_module_heading( string $line, array $patterns ): bool {
+                if ( preg_match( '/^MODULE\s+\d+\.?/i', $line ) ) {
+                        return true;
+                }
+
+                return $this->matches_any_pattern( $line, $patterns['module'] )
+                        || $this->matches_any_pattern( $line, $patterns['generic'] );
+        }
+
+        /**
+         * Check whether the current line represents a lesson heading.
+         *
+         * @param string $line     Line to inspect.
+         * @param array  $patterns Prepared patterns map.
+         *
+         * @return bool
+         */
+        private function is_lesson_heading( string $line, array $patterns ): bool {
+                if ( preg_match( '/^Lesson\s+\d+\.?/i', $line ) ) {
+                        return true;
+                }
+
+                return $this->matches_any_pattern( $line, $patterns['lesson'] )
+                        || $this->matches_any_pattern( $line, $patterns['generic'] );
+        }
+
+        /**
+         * Determine if a line matches any prepared pattern.
+         *
+         * @param string $line      The source line.
+         * @param array  $patterns  List of normalized patterns.
+         *
+         * @return bool
+         */
+        private function matches_any_pattern( string $line, array $patterns ): bool {
+                foreach ( $patterns as $pattern ) {
+                        if ( $pattern['regex'] ) {
+                                $result = @preg_match( $pattern['pattern'], $line ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+
+                                if ( false !== $result && 1 === $result ) {
+                                        return true;
+                                }
+                        } elseif ( false !== stripos( $line, $pattern['pattern'] ) ) {
+                                return true;
+                        }
+                }
+
+                return false;
+        }
 
 	/**
 	 * Convert lines into wpautop formatted block.
