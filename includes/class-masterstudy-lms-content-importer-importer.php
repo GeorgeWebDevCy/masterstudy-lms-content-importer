@@ -211,7 +211,8 @@ class Masterstudy_Lms_Content_Importer_Importer {
 				continue;
 			}
 
-			$lessons = ! empty( $module['lessons'] ) && is_array( $module['lessons'] ) ? $module['lessons'] : array();
+                        $lessons = ! empty( $module['lessons'] ) && is_array( $module['lessons'] ) ? $module['lessons'] : array();
+                        $material_order = 0;
 
 			if ( empty( $lessons ) ) {
 				$lessons[] = array(
@@ -241,12 +242,13 @@ class Masterstudy_Lms_Content_Importer_Importer {
 					)
 				);
 
-				$material_repository->create(
-					array(
-						'post_id'    => $lesson_id,
-						'section_id' => $section->id,
-					)
-				);
+                                $material_repository->create(
+                                        array(
+                                                'post_id'    => $lesson_id,
+                                                'section_id' => $section->id,
+                                                'order'      => ++$material_order,
+                                        )
+                                );
 			}
 
 			$quiz_data = $module['quiz'];
@@ -286,21 +288,22 @@ class Masterstudy_Lms_Content_Importer_Importer {
 				continue;
 			}
 
-			$quiz_id = $quiz_repository->create(
-				array(
-					'title'     => $quiz_title,
-					'content'   => '',
-					'questions' => $question_ids,
-					'style'     => 'default',
-				)
-			);
+                        $quiz_id = $quiz_repository->create(
+                                array(
+                                        'title'     => $quiz_title,
+                                        'content'   => '',
+                                        'questions' => $question_ids,
+                                        'style'     => 'default',
+                                )
+                        );
 
-			$material_repository->create(
-				array(
-					'post_id'    => $quiz_id,
-					'section_id' => $section->id,
-				)
-			);
+                        $material_repository->create(
+                                array(
+                                        'post_id'    => $quiz_id,
+                                        'section_id' => $section->id,
+                                        'order'      => ++$material_order,
+                                )
+                        );
 		}
 	}
 
