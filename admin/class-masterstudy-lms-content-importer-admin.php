@@ -139,7 +139,7 @@ class Masterstudy_Lms_Content_Importer_Admin {
                                                 <td>
                                                         <input type="text" id="ms_lms_lesson_template" name="ms_lms_lesson_template" class="regular-text" value="<?php echo esc_attr( $lesson_template_value ); ?>" />
                                                         <p class="description">
-                                                                <?php esc_html_e( 'Define how lesson titles should be generated. Use placeholders such as the module title (e.g., “{{module}} Overview”).', 'masterstudy-lms-content-importer' ); ?>
+                                                                <?php esc_html_e( 'Define how lesson titles should be generated. Use placeholders such as %module%, %lesson%, or %index% (e.g., “%module% - %lesson%”).', 'masterstudy-lms-content-importer' ); ?>
                                                         </p>
                                                 </td>
                                         </tr>

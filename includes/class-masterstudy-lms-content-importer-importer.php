@@ -49,13 +49,12 @@ class Masterstudy_Lms_Content_Importer_Importer {
         public function import( string $file_path, array $args = array() ): int {
                 $this->assert_dependencies();
 
-                $lesson_template     = ! empty( $args['lesson_title_template'] ) ? $args['lesson_title_template'] : __( 'Overview', 'masterstudy-lms-content-importer' );
-                $identifier_patterns = ! empty( $args['identifier_patterns'] ) && is_array( $args['identifier_patterns'] ) ? $args['identifier_patterns'] : array();
+                $options = $this->normalize_import_options( $args );
 
                 $data = $this->parser->parse(
                         $file_path,
                         array(
-                                'identifier_patterns' => $identifier_patterns,
+                                'identifier_patterns' => $options['identifier_patterns'],
                         )
                 );
 
@@ -78,12 +77,51 @@ class Masterstudy_Lms_Content_Importer_Importer {
                         $data['modules'],
                         $author_id,
                         array(
-                                'lesson_title_template' => $lesson_template,
+                                'lesson_title_template' => $options['lesson_title_template'],
                         )
                 );
 
-		return $course_id;
-	}
+                return $course_id;
+        }
+
+        /**
+         * Normalise options passed from the admin layer.
+         *
+         * @param array $args Raw options array.
+         *
+         * @return array{lesson_title_template:string,identifier_patterns:array}
+         */
+        private function normalize_import_options( array $args ): array {
+                $lesson_template = __( 'Overview', 'masterstudy-lms-content-importer' );
+
+                if ( isset( $args['lesson_title_template'] ) && is_string( $args['lesson_title_template'] ) ) {
+                        $lesson_template = trim( $args['lesson_title_template'] );
+
+                        if ( '' === $lesson_template ) {
+                                $lesson_template = __( 'Overview', 'masterstudy-lms-content-importer' );
+                        }
+                }
+
+                $identifier_patterns = array();
+
+                if ( ! empty( $args['identifier_patterns'] ) && is_array( $args['identifier_patterns'] ) ) {
+                        $identifier_patterns = array_values(
+                                array_filter(
+                                        array_map(
+                                                static function ( $pattern ) {
+                                                        return is_string( $pattern ) ? trim( $pattern ) : '';
+                                                },
+                                                $args['identifier_patterns']
+                                        )
+                                )
+                        );
+                }
+
+                return array(
+                        'lesson_title_template' => $lesson_template,
+                        'identifier_patterns'   => $identifier_patterns,
+                );
+        }
 
 	/**
 	 * Ensure MasterStudy plugin classes exist.
@@ -302,6 +340,15 @@ class Masterstudy_Lms_Content_Importer_Importer {
                         '%module%' => $module_title,
                         '%lesson%' => $fallback_lesson,
                         '%index%'  => (string) $lesson_index,
+                );
+
+                $template = strtr(
+                        $template,
+                        array(
+                                '{{module}}' => '%module%',
+                                '{{lesson}}' => '%lesson%',
+                                '{{index}}'  => '%index%',
+                        )
                 );
 
                 $resolved = strtr( $template, $replacements );
