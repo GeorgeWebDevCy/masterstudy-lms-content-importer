@@ -69,8 +69,8 @@ class Masterstudy_Lms_Content_Importer {
 	public function __construct() {
 		if ( defined( 'MASTERSTUDY_LMS_CONTENT_IMPORTER_VERSION' ) ) {
 			$this->version = MASTERSTUDY_LMS_CONTENT_IMPORTER_VERSION;
-		} else {
-			$this->version = '1.2.0';
+               } else {
+                       $this->version = '1.2.1';
 		}
 		$this->plugin_name = 'masterstudy-lms-content-importer';
 

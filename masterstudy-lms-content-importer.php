@@ -16,7 +16,7 @@
  * Plugin Name:       Masterstudy LMS Content Importer
  * Plugin URI:        https://https://www.georgenicolaou.me/plugins/masterstudy-lms-content-importer
  * Description:       Accepts a Word Document and imorts it as a Masterstudy Course (courses,lessons,sections,quizzes)
- * Version:           1.2.0
+ * Version:           1.2.1
  * Author:            George Nicolaou
  * Author URI:        https://https://www.georgenicolaou.me/
  * License:           GPL-2.0+
@@ -35,7 +35,7 @@ if ( ! defined( 'WPINC' ) ) {
  * Start at version 1.0.0 and use SemVer - https://semver.org
  * Rename this for your plugin and update it as you release new versions.
  */
-define( 'MASTERSTUDY_LMS_CONTENT_IMPORTER_VERSION', '1.2.0' );
+define( 'MASTERSTUDY_LMS_CONTENT_IMPORTER_VERSION', '1.2.1' );
 
 /**
  * Set up automatic updates via GitHub using Plugin Update Checker.
