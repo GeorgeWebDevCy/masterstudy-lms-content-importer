@@ -40,23 +40,21 @@ class Masterstudy_Lms_Content_Importer_Importer {
 	 * Import DOCX file and create MasterStudy LMS course.
 	 *
 	 * @param string $file_path Uploaded DOCX path.
-	 * @param array  $args      Extra args (author_id, status).
+	 * @param array  $args      Extra args (author_id, status, lesson_title_template, parser_options).
 	 *
 	 * @return int Created course ID.
 	 *
 	 * @throws RuntimeException When import fails.
 	 */
-        public function import( string $file_path, array $args = array() ): int {
-                $this->assert_dependencies();
+	public function import( string $file_path, array $args = array() ): int {
+		$this->assert_dependencies();
 
-                $options = $this->normalize_import_options( $args );
+		$options = $this->normalize_import_options( $args );
 
-                $data = $this->parser->parse(
-                        $file_path,
-                        array(
-                                'identifier_patterns' => $options['identifier_patterns'],
-                        )
-                );
+		$data = $this->parser->parse(
+			$file_path,
+			$options['parser_options']
+		);
 
 		if ( empty( $data['modules'] ) ) {
 			throw new RuntimeException( __( 'No modules were detected in the document.', 'masterstudy-lms-content-importer' ) );
@@ -72,56 +70,49 @@ class Masterstudy_Lms_Content_Importer_Importer {
 			$status
 		);
 
-                $this->create_modules(
-                        $course_id,
-                        $data['modules'],
-                        $author_id,
-                        array(
-                                'lesson_title_template' => $options['lesson_title_template'],
-                        )
-                );
+		$this->create_modules(
+			$course_id,
+			$data['modules'],
+			$options['lesson_title_template']
+		);
 
-                return $course_id;
-        }
+		return $course_id;
+	}
 
-        /**
-         * Normalise options passed from the admin layer.
-         *
-         * @param array $args Raw options array.
-         *
-         * @return array{lesson_title_template:string,identifier_patterns:array}
-         */
-        private function normalize_import_options( array $args ): array {
-                $lesson_template = __( 'Overview', 'masterstudy-lms-content-importer' );
+	/**
+	 * Normalise options passed from the admin layer.
+	 *
+	 * @param array $args Raw options array.
+	 *
+	 * @return array{lesson_title_template:string,parser_options:array}
+	 */
+	private function normalize_import_options( array $args ): array {
+		$lesson_template = '%lesson_source_title%';
 
-                if ( isset( $args['lesson_title_template'] ) && is_string( $args['lesson_title_template'] ) ) {
-                        $lesson_template = trim( $args['lesson_title_template'] );
+		if ( isset( $args['lesson_title_template'] ) && is_string( $args['lesson_title_template'] ) ) {
+			$lesson_template = trim( $args['lesson_title_template'] );
 
-                        if ( '' === $lesson_template ) {
-                                $lesson_template = __( 'Overview', 'masterstudy-lms-content-importer' );
-                        }
-                }
+			if ( '' === $lesson_template ) {
+				$lesson_template = '%lesson_source_title%';
+			}
+		}
 
-                $identifier_patterns = array();
+		$parser_options = array(
+			'lesson_title_template' => $lesson_template,
+			'module_identifier'     => '',
+			'lesson_identifier'     => '',
+			'use_toc'               => true,
+		);
 
-                if ( ! empty( $args['identifier_patterns'] ) && is_array( $args['identifier_patterns'] ) ) {
-                        $identifier_patterns = array_values(
-                                array_filter(
-                                        array_map(
-                                                static function ( $pattern ) {
-                                                        return is_string( $pattern ) ? trim( $pattern ) : '';
-                                                },
-                                                $args['identifier_patterns']
-                                        )
-                                )
-                        );
-                }
+		if ( ! empty( $args['parser_options'] ) && is_array( $args['parser_options'] ) ) {
+			$parser_options = array_merge( $parser_options, $args['parser_options'] );
+		}
 
-                return array(
-                        'lesson_title_template' => $lesson_template,
-                        'identifier_patterns'   => $identifier_patterns,
-                );
-        }
+		return array(
+			'lesson_title_template' => $lesson_template,
+			'parser_options'        => $parser_options,
+		);
+	}
 
 	/**
 	 * Ensure MasterStudy plugin classes exist.
@@ -192,21 +183,21 @@ class Masterstudy_Lms_Content_Importer_Importer {
 	/**
 	 * Create sections, lessons, and quizzes for each module.
 	 *
-	 * @param int   $course_id Course ID.
-	 * @param array $modules   Parsed modules.
-	 * @param int   $author_id Author ID.
+	 * @param int    $course_id             Course ID.
+	 * @param array  $modules               Parsed modules.
+	 * @param string $lesson_title_template Template for fallback lesson titles.
 	 */
-        private function create_modules( int $course_id, array $modules, int $author_id, array $options = array() ): void {
-                $section_repository    = new CurriculumSectionRepository();
-                $material_repository   = new CurriculumMaterialRepository();
-                $lesson_repository     = new LessonRepository();
-                $quiz_repository       = new QuizRepository();
-                $question_repository   = new QuestionRepository();
-                $section_order         = 0;
-                $lesson_template       = ! empty( $options['lesson_title_template'] ) ? $options['lesson_title_template'] : __( 'Overview', 'masterstudy-lms-content-importer' );
+	private function create_modules( int $course_id, array $modules, string $lesson_title_template ): void {
+		$section_repository  = new CurriculumSectionRepository();
+		$material_repository = new CurriculumMaterialRepository();
+		$lesson_repository   = new LessonRepository();
+		$quiz_repository     = new QuizRepository();
+		$question_repository = new QuestionRepository();
+		$section_order       = 0;
 
-                foreach ( $modules as $module ) {
-                        $section_order++;
+		foreach ( $modules as $module_index => $module ) {
+			$section_order++;
+
 			$section = $section_repository->create(
 				array(
 					'course_id' => $course_id,
@@ -219,53 +210,45 @@ class Masterstudy_Lms_Content_Importer_Importer {
 				continue;
 			}
 
-                        $lessons = array();
+			$lessons = ! empty( $module['lessons'] ) && is_array( $module['lessons'] ) ? $module['lessons'] : array();
 
-                        if ( ! empty( $module['lessons'] ) && is_array( $module['lessons'] ) ) {
-                                $lessons = $module['lessons'];
-                        } elseif ( isset( $module['content'] ) ) {
-                                $lessons[] = array(
-                                        'title'   => '',
-                                        'content' => $module['content'],
-                                );
-                        }
+			if ( empty( $lessons ) ) {
+				$lessons[] = array(
+					'title'   => $this->format_lesson_title( $lesson_title_template, $module['title'], $module_index + 1, 1, '' ),
+					'content' => '',
+				);
+			}
 
-                        if ( empty( $lessons ) ) {
-                                $lessons[] = array(
-                                        'title'   => '',
-                                        'content' => '',
-                                );
-                        }
+			foreach ( $lessons as $lesson_index => $lesson ) {
+				$title = isset( $lesson['title'] ) ? trim( $lesson['title'] ) : '';
 
-                        $lesson_position = 0;
+				if ( '' === $title ) {
+					$title = $this->format_lesson_title(
+						$lesson_title_template,
+						$module['title'],
+						$module_index + 1,
+						$lesson_index + 1,
+						''
+					);
+				}
 
-                        foreach ( $lessons as $lesson ) {
-                                $lesson_position++;
+				$lesson_id = $lesson_repository->create(
+					array(
+						'title'   => $title,
+						'content' => $lesson['content'] ?? '',
+						'type'    => LessonType::TEXT,
+					)
+				);
 
-                                $resolved_title = $this->resolve_lesson_title(
-                                        $lesson_template,
-                                        $module['title'],
-                                        isset( $lesson['title'] ) ? $lesson['title'] : '',
-                                        $lesson_position
-                                );
+				$material_repository->create(
+					array(
+						'post_id'    => $lesson_id,
+						'section_id' => $section->id,
+					)
+				);
+			}
 
-                                $lesson_id = $lesson_repository->create(
-                                        array(
-                                                'title'   => $resolved_title,
-                                                'content' => isset( $lesson['content'] ) ? $lesson['content'] : '',
-                                                'type'    => LessonType::TEXT,
-                                        )
-                                );
-
-                                $material_repository->create(
-                                        array(
-                                                'post_id'    => $lesson_id,
-                                                'section_id' => $section->id,
-                                        )
-                                );
-                        }
-
-                        $quiz_data = $module['quiz'];
+			$quiz_data = $module['quiz'];
 
 			if ( empty( $quiz_data['questions'] ) ) {
 				continue;
@@ -308,57 +291,52 @@ class Masterstudy_Lms_Content_Importer_Importer {
 				)
 			);
 
-                        $material_repository->create(
-                                array(
-                                        'post_id'    => $quiz_id,
-                                        'section_id' => $section->id,
-                                )
-                        );
-                }
-        }
+			$material_repository->create(
+				array(
+					'post_id'    => $quiz_id,
+					'section_id' => $section->id,
+				)
+			);
+		}
+	}
 
-        /**
-         * Build a lesson title from the configured template.
-         *
-         * @param string $template      User provided template.
-         * @param string $module_title  Module heading.
-         * @param string $lesson_title  Parsed lesson heading.
-         * @param int    $lesson_index  Lesson position within the module (1 based).
-         *
-         * @return string
-         */
-        private function resolve_lesson_title( string $template, string $module_title, string $lesson_title, int $lesson_index ): string {
-                $fallback_lesson = '' !== trim( $lesson_title )
-                        ? $lesson_title
-                        : sprintf(
-                                /* translators: %d: lesson index */
-                                __( 'Lesson %d', 'masterstudy-lms-content-importer' ),
-                                $lesson_index
-                        );
+	/**
+	 * Build a fallback lesson title from template tokens.
+	 *
+	 * @param string $template            Template string.
+	 * @param string $module_title        Module title.
+	 * @param int    $module_index        Module index (1-based).
+	 * @param int    $lesson_index        Lesson index (1-based).
+	 * @param string $lesson_source_title Source title.
+	 *
+	 * @return string
+	 */
+	private function format_lesson_title( string $template, string $module_title, int $module_index, int $lesson_index, string $lesson_source_title ): string {
+		$template = trim( $template );
 
-                $replacements = array(
-                        '%module%' => $module_title,
-                        '%lesson%' => $fallback_lesson,
-                        '%index%'  => (string) $lesson_index,
-                );
+		if ( '' === $template ) {
+			$template = '%lesson_source_title%';
+		}
 
-                $template = strtr(
-                        $template,
-                        array(
-                                '{{module}}' => '%module%',
-                                '{{lesson}}' => '%lesson%',
-                                '{{index}}'  => '%index%',
-                        )
-                );
+		$replacements = array(
+			'%module_title%'        => $module_title,
+			'%module_index%'        => (string) $module_index,
+			'%lesson_index%'        => (string) $lesson_index,
+			'%lesson_source_title%' => $lesson_source_title,
+		);
 
-                $resolved = strtr( $template, $replacements );
-                $resolved = trim( $resolved );
+		$title = strtr( $template, $replacements );
+		$title = trim( $title );
 
-                if ( '' === $resolved ) {
-                        $resolved = $fallback_lesson;
-                }
+		if ( '' === $title ) {
+			$title = $module_title . ' - ' . sprintf(
+				/* translators: 1: lesson index */
+				__( 'Lesson %d', 'masterstudy-lms-content-importer' ),
+				$lesson_index
+			);
+		}
 
-                return $resolved;
-        }
+		return $title;
+	}
 }
 

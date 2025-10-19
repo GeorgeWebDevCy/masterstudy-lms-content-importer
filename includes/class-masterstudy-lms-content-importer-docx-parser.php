@@ -13,110 +13,157 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Masterstudy_Lms_Content_Importer_Docx_Parser {
 
+	private const WP_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
 	/**
-	 * Parse a DOCX file into course/module/question structure.
+	 * Parse a DOCX file into course/module/lesson/question structure.
 	 *
-         * @param string $file_path Absolute path to the uploaded DOCX file.
-         * @param array  $config    Optional configuration (identifier patterns).
-         *
-         * @return array
+	 * @param string $file_path Absolute path to the uploaded DOCX file.
+	 * @param array  $options   Optional configuration (lesson template, identifiers, toc preference).
+	 *
+	 * @return array
 	 *
 	 * @throws RuntimeException When the file cannot be parsed.
 	 */
-        public function parse( string $file_path, array $config = array() ): array {
-                $paragraphs = $this->extract_paragraphs( $file_path );
+	public function parse( string $file_path, array $options = array() ): array {
+		$options = array_merge(
+			array(
+				'lesson_title_template' => '%lesson_source_title%',
+				'module_identifier'     => 'Module',
+				'lesson_identifier'     => '',
+				'use_toc'               => true,
+			),
+			$options
+		);
 
-                if ( empty( $paragraphs ) ) {
-                        throw new RuntimeException( __( 'The document appears to be empty.', 'masterstudy-lms-content-importer' ) );
-                }
+		$doc        = $this->load_document_dom( $file_path );
+		$paragraphs = $this->extract_paragraphs( $doc );
 
-                $patterns = $this->prepare_identifier_patterns( $config['identifier_patterns'] ?? array() );
+		if ( empty( $paragraphs ) ) {
+			throw new RuntimeException( __( 'The document appears to be empty.', 'masterstudy-lms-content-importer' ) );
+		}
 
-                $course_title = '';
-                $course_intro = array();
-                $modules      = array();
+		$toc_modules = array();
 
-                $current_module = null;
-                $current_lesson = null;
-                $in_test        = false;
+		if ( ! empty( $options['use_toc'] ) ) {
+			$toc_modules = $this->build_toc_structure( $paragraphs );
+		}
 
-                foreach ( $paragraphs as $paragraph ) {
-                        $line = trim( $paragraph );
+		$course_title    = '';
+		$course_intro    = array();
+		$modules         = array();
+		$current_module  = null;
+		$current_lesson  = null;
+		$collecting_test = false;
+		$module_index    = 0;
+		$module_cursor   = 0;
 
-			if ( '' === $line ) {
+		foreach ( $paragraphs as $paragraph ) {
+			$text  = $paragraph['text'];
+			$style = $paragraph['style'];
+
+			if ( '' === $text ) {
 				continue;
 			}
 
-			if ( empty( $course_title ) ) {
-				$course_title = $line;
-			}
-
-                        if ( $this->is_module_heading( $line, $patterns ) ) {
-                                if ( ! empty( $current_module ) ) {
-                                        if ( ! empty( $current_lesson ) ) {
-                                                $current_module['lessons'][] = $current_lesson;
-                                                $current_lesson              = null;
-                                        }
-
-                                        $modules[] = $this->normalize_module( $current_module );
-                                }
-
-                                $current_module = array(
-                                        'title'        => $line,
-                                        'lesson_lines' => array(),
-                                        'test_lines'   => array(),
-                                        'lessons'      => array(),
-                                );
-                                $in_test        = false;
-                                continue;
-                        }
-
-			if ( empty( $current_module ) ) {
-				$course_intro[] = $line;
+			if ( $this->is_toc_paragraph( $style ) ) {
 				continue;
 			}
 
-                        if ( preg_match( '/^Test\b/i', $line ) ) {
-                                if ( ! empty( $current_lesson ) ) {
-                                        $current_module['lessons'][] = $current_lesson;
-                                        $current_lesson              = null;
-                                }
+			if ( '' === $course_title ) {
+				$course_title = $text;
+			}
 
-                                $in_test = true;
-                                continue;
-                        }
+			$normalized_text = $this->normalize_label( $text );
+			$module_template = null;
 
-                        if ( $in_test ) {
-                                $current_module['test_lines'][] = $line;
-                        } else {
-                                if ( $this->is_lesson_heading( $line, $patterns ) ) {
-                                        if ( ! empty( $current_lesson ) ) {
-                                                $current_module['lessons'][] = $current_lesson;
-                                        }
+			if ( isset( $toc_modules[ $module_cursor ] ) && $normalized_text === $toc_modules[ $module_cursor ]['label'] ) {
+				$module_template = $toc_modules[ $module_cursor ];
+				$module_cursor++;
+			}
 
-                                        $current_lesson = array(
-                                                'title' => $line,
-                                                'lines' => array(),
-                                        );
-                                        continue;
-                                }
+			if ( $module_template || $this->matches_identifier( $text, $options['module_identifier'] ) ) {
+				if ( $current_module ) {
+					$this->finalize_current_lesson( $current_module, $current_lesson, $options['lesson_title_template'] );
+					$modules[] = $this->finalize_module( $current_module, $options['lesson_title_template'] );
+				}
 
-                                if ( ! empty( $current_lesson ) ) {
-                                        $current_lesson['lines'][] = $line;
-                                } else {
-                                        $current_module['lesson_lines'][] = $line;
-                                }
-                        }
-                }
+				$module_index++;
 
-                if ( ! empty( $current_module ) ) {
-                        if ( ! empty( $current_lesson ) ) {
-                                $current_module['lessons'][] = $current_lesson;
-                                $current_lesson              = null;
-                        }
+				$current_module = array(
+					'title'          => $module_template['title'] ?? $text,
+					'label'          => $module_template['label'] ?? $this->normalize_label( $text ),
+					'lesson_queue'   => $module_template['lessons'] ?? array(),
+					'lessons'        => array(),
+					'lesson_counter' => 0,
+					'module_index'   => $module_index,
+					'quiz_lines'     => array(),
+				);
 
-                        $modules[] = $this->normalize_module( $current_module );
-                }
+				$current_lesson  = null;
+				$collecting_test = false;
+				continue;
+			}
+
+			if ( ! $current_module ) {
+				$course_intro[] = $text;
+				continue;
+			}
+
+			if ( preg_match( '/^Test\b/i', $text ) ) {
+				$this->finalize_current_lesson( $current_module, $current_lesson, $options['lesson_title_template'] );
+				$collecting_test = true;
+				continue;
+			}
+
+			if ( $collecting_test ) {
+				$current_module['quiz_lines'][] = $text;
+				continue;
+			}
+
+			$lesson_template = null;
+
+			if ( ! empty( $current_module['lesson_queue'] ) ) {
+				$next_lesson = $current_module['lesson_queue'][0];
+
+				if ( $normalized_text === $next_lesson['label'] ) {
+					array_shift( $current_module['lesson_queue'] );
+					$lesson_template = $next_lesson['title'];
+				}
+			}
+
+			if ( null === $lesson_template && $this->matches_identifier( $text, $options['lesson_identifier'] ) ) {
+				$lesson_template = $text;
+			}
+
+			if ( null !== $lesson_template ) {
+				$this->finalize_current_lesson( $current_module, $current_lesson, $options['lesson_title_template'] );
+
+				$current_lesson = array(
+					'title'        => '',
+					'source_title' => $lesson_template,
+					'content_lines'=> array(),
+					'explicit'     => true,
+				);
+				continue;
+			}
+
+			if ( ! $current_lesson ) {
+				$current_lesson = array(
+					'title'        => '',
+					'source_title' => '',
+					'content_lines'=> array(),
+					'explicit'     => false,
+				);
+			}
+
+			$current_lesson['content_lines'][] = $text;
+		}
+
+		if ( $current_module ) {
+			$this->finalize_current_lesson( $current_module, $current_lesson, $options['lesson_title_template'] );
+			$modules[] = $this->finalize_module( $current_module, $options['lesson_title_template'] );
+		}
 
 		return array(
 			'title'       => $course_title,
@@ -126,15 +173,84 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 	}
 
 	/**
-	 * Extract paragraphs from DOCX file.
+	 * Finalize the current lesson and store it under the current module.
+	 *
+	 * @param array $module                 Module reference.
+	 * @param ?array &$lesson               Lesson reference.
+	 * @param string $lesson_title_template Template supplied by the user.
+	 */
+	private function finalize_current_lesson( array &$module, ?array &$lesson, string $lesson_title_template ): void {
+		if ( null === $lesson ) {
+			return;
+		}
+
+		$lesson_index = $module['lesson_counter'] + 1;
+		$module['lesson_counter'] = $lesson_index;
+
+		$title = $lesson['title'];
+
+		if ( '' === $title ) {
+			$title = $this->format_lesson_title(
+				$lesson_title_template,
+				$module['title'],
+				$module['module_index'],
+				$lesson_index,
+				$lesson['source_title']
+			);
+		}
+
+		$module['lessons'][] = array(
+			'title'   => $title,
+			'content' => $this->format_block( $lesson['content_lines'] ?? array() ),
+		);
+
+		$lesson = null;
+	}
+
+	/**
+	 * Finalize module data.
+	 *
+	 * @param array  $module                Raw module data.
+	 * @param string $lesson_title_template Template for fallback titles.
+	 *
+	 * @return array
+	 */
+	private function finalize_module( array $module, string $lesson_title_template ): array {
+		$lessons = $module['lessons'];
+
+		if ( empty( $lessons ) ) {
+			$lessons[] = array(
+				'title'   => $this->format_lesson_title(
+					$lesson_title_template,
+					$module['title'],
+					$module['module_index'],
+					1,
+					''
+				),
+				'content' => '',
+			);
+		}
+
+		$quiz = $this->parse_quiz( $module['quiz_lines'] ?? array(), $module['title'] );
+
+		return array(
+			'title'   => $module['title'],
+			'lessons' => $lessons,
+			'quiz'    => $quiz,
+		);
+	}
+
+	/**
+	 * Create DOMDocument from DOCX.
 	 *
 	 * @param string $file_path File path.
-	 * @return array
+	 *
+	 * @return DOMDocument
 	 *
 	 * @throws RuntimeException When the file cannot be read.
 	 */
-	private function extract_paragraphs( string $file_path ): array {
-		if ( ! class_exists( 'ZipArchive' ) ) {
+	private function load_document_dom( string $file_path ): DOMDocument {
+		if ( ! class_exists( ZipArchive::class ) ) {
 			throw new RuntimeException( __( 'The ZipArchive PHP extension is required to parse DOCX files.', 'masterstudy-lms-content-importer' ) );
 		}
 
@@ -158,8 +274,19 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 			throw new RuntimeException( __( 'Unable to read the DOCX XML content.', 'masterstudy-lms-content-importer' ) );
 		}
 
+		return $doc;
+	}
+
+	/**
+	 * Extract paragraphs with their associated styles.
+	 *
+	 * @param DOMDocument $doc Document object.
+	 *
+	 * @return array<int, array{text:string, style:string}>
+	 */
+	private function extract_paragraphs( DOMDocument $doc ): array {
 		$xpath = new DOMXPath( $doc );
-		$xpath->registerNamespace( 'w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' );
+		$xpath->registerNamespace( 'w', self::WP_NS );
 
 		$paragraphs = array();
 
@@ -170,8 +297,22 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 				$text .= $text_node->nodeValue;
 			}
 
-			if ( '' !== trim( $text ) ) {
-				$paragraphs[] = preg_replace( '/\s+/u', ' ', $text );
+			$text  = preg_replace( '/\s+/u', ' ', trim( $text ) );
+			$style = '';
+
+			/** @var DOMNode $paragraph */
+			$style_node = $xpath->query( './w:pPr/w:pStyle', $paragraph )->item( 0 );
+
+			if ( $style_node instanceof DOMNode ) {
+				$style = $style_node->attributes->getNamedItemNS( self::WP_NS, 'val' );
+				$style = $style ? $style->nodeValue : '';
+			}
+
+			if ( '' !== $text ) {
+				$paragraphs[] = array(
+					'text'  => $text,
+					'style' => $style,
+				);
 			}
 		}
 
@@ -179,175 +320,102 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 	}
 
 	/**
-	 * Normalize module data.
+	 * Build TOC hierarchy from paragraphs.
 	 *
-	 * @param array $module Raw module data.
+	 * @param array $paragraphs Paragraph collection.
 	 *
-	 * @return array
+	 * @return array<int, array{title:string,label:string,lessons:array<int, array{title:string,label:string}>}>
 	 */
-        private function normalize_module( array $module ): array {
-                $lessons = array();
+	private function build_toc_structure( array $paragraphs ): array {
+		$modules        = array();
+		$current_module = null;
 
-                if ( ! empty( $module['lessons'] ) ) {
-                        foreach ( $module['lessons'] as $lesson ) {
-                                $lessons[] = array(
-                                        'title'   => $lesson['title'],
-                                        'content' => $this->format_block( $lesson['lines'] ?? array() ),
-                                );
-                        }
-                }
+		foreach ( $paragraphs as $paragraph ) {
+			$style = $paragraph['style'];
+			$text  = $this->cleanup_toc_title( $paragraph['text'] );
 
-                if ( empty( $lessons ) ) {
-                        $lessons[] = array(
-                                'title'   => '',
-                                'content' => $this->format_block( $module['lesson_lines'] ?? array() ),
-                        );
-                }
+			if ( '' === $text || '' === $style ) {
+				continue;
+			}
 
-                $quiz = $this->parse_quiz( $module['test_lines'], $module['title'] );
+			if ( stripos( $style, 'TOC1' ) === 0 ) {
+				$modules[]      = array(
+					'title'   => $text,
+					'label'   => $this->normalize_label( $text ),
+					'lessons' => array(),
+				);
+				$current_module = count( $modules ) - 1;
+				continue;
+			}
 
-                return array(
-                        'title'   => $module['title'],
-                        'content' => $lessons[0]['content'],
-                        'lessons' => $lessons,
-                        'quiz'    => $quiz,
-                );
-        }
+			if ( stripos( $style, 'TOC2' ) === 0 && null !== $current_module ) {
+				$modules[ $current_module ]['lessons'][] = array(
+					'title' => $text,
+					'label' => $this->normalize_label( $text ),
+				);
+			}
+		}
 
-        /**
-         * Prepare identifier patterns for module and lesson detection.
-         *
-         * @param array $raw_patterns Raw user supplied patterns.
-         *
-         * @return array{module:array<int, array{regex:bool,pattern:string}>, lesson:array<int, array{regex:bool,pattern:string}>, generic:array<int, array{regex:bool,pattern:string}>}
-         */
-        private function prepare_identifier_patterns( array $raw_patterns ): array {
-                $normalized = array(
-                        'module'  => array(),
-                        'lesson'  => array(),
-                        'generic' => array(),
-                );
+		return $modules;
+	}
 
-                foreach ( $raw_patterns as $pattern ) {
-                        if ( '' === $pattern ) {
-                                continue;
-                        }
+	/**
+	 * Determine if the style corresponds to TOC.
+	 *
+	 * @param string $style Paragraph style.
+	 *
+	 * @return bool
+	 */
+	private function is_toc_paragraph( string $style ): bool {
+		return stripos( $style, 'TOC' ) === 0;
+	}
 
-                        $type = null;
+	/**
+	 * Cleanup TOC entry removing dot leaders and page numbers.
+	 *
+	 * @param string $title Raw TOC title.
+	 *
+	 * @return string
+	 */
+	private function cleanup_toc_title( string $title ): string {
+		$title = preg_replace( '/\.{2,}/', ' ', $title );
+		$title = preg_replace( '/\s+\d+$/', '', $title );
 
-                        if ( false !== stripos( $pattern, 'module:' ) ) {
-                                $type    = 'module';
-                                $pattern = trim( substr( $pattern, stripos( $pattern, 'module:' ) + 7 ) );
-                        } elseif ( false !== stripos( $pattern, 'lesson:' ) ) {
-                                $type    = 'lesson';
-                                $pattern = trim( substr( $pattern, stripos( $pattern, 'lesson:' ) + 7 ) );
-                        } elseif ( false !== stripos( $pattern, 'module' ) ) {
-                                $type = 'module';
-                        } elseif ( false !== stripos( $pattern, 'lesson' ) ) {
-                                $type = 'lesson';
-                        }
+		return trim( $title );
+	}
 
-                        $stored_pattern = $this->normalize_pattern_definition( $pattern );
+	/**
+	 * Normalize label for comparisons.
+	 *
+	 * @param string $text Raw text.
+	 *
+	 * @return string
+	 */
+	private function normalize_label( string $text ): string {
+		$text = $this->cleanup_toc_title( $text );
+		$text = strtolower( $text );
 
-                        if ( null === $type ) {
-                                $normalized['generic'][] = $stored_pattern;
-                        } else {
-                                $normalized[ $type ][] = $stored_pattern;
-                        }
-                }
+		return preg_replace( '/\s+/', ' ', trim( $text ) );
+	}
 
-                return $normalized;
-        }
+	/**
+	 * Determine if text matches identifier prefix.
+	 *
+	 * @param string $text       Paragraph text.
+	 * @param string $identifier Identifier provided by user.
+	 *
+	 * @return bool
+	 */
+	private function matches_identifier( string $text, string $identifier ): bool {
+		if ( '' === $identifier ) {
+			return false;
+		}
 
-        /**
-         * Normalize pattern definition, turning slash wrapped strings into regexes.
-         *
-         * @param string $pattern Pattern definition.
-         *
-         * @return array{regex:bool,pattern:string}
-         */
-        private function normalize_pattern_definition( string $pattern ): array {
-                $pattern = trim( $pattern );
+		$text       = $this->normalize_label( $text );
+		$identifier = strtolower( trim( $identifier ) );
 
-                if ( 2 <= strlen( $pattern ) && '/' === $pattern[0] ) {
-                        $last_delimiter = strrpos( $pattern, '/' );
-
-                        if ( false !== $last_delimiter && 0 !== $last_delimiter ) {
-                                $modifiers = substr( $pattern, $last_delimiter + 1 );
-                                $body      = substr( $pattern, 1, $last_delimiter - 1 );
-
-                                if ( '' !== $body ) {
-                                        return array(
-                                                'regex'   => true,
-                                                'pattern' => '/' . $body . '/' . $modifiers,
-                                        );
-                                }
-                        }
-                }
-
-                return array(
-                        'regex'   => false,
-                        'pattern' => $pattern,
-                );
-        }
-
-        /**
-         * Check whether the current line represents a module heading.
-         *
-         * @param string $line     Line to inspect.
-         * @param array  $patterns Prepared patterns map.
-         *
-         * @return bool
-         */
-        private function is_module_heading( string $line, array $patterns ): bool {
-                if ( preg_match( '/^MODULE\s+\d+\.?/i', $line ) ) {
-                        return true;
-                }
-
-                return $this->matches_any_pattern( $line, $patterns['module'] )
-                        || $this->matches_any_pattern( $line, $patterns['generic'] );
-        }
-
-        /**
-         * Check whether the current line represents a lesson heading.
-         *
-         * @param string $line     Line to inspect.
-         * @param array  $patterns Prepared patterns map.
-         *
-         * @return bool
-         */
-        private function is_lesson_heading( string $line, array $patterns ): bool {
-                if ( preg_match( '/^Lesson\s+\d+\.?/i', $line ) ) {
-                        return true;
-                }
-
-                return $this->matches_any_pattern( $line, $patterns['lesson'] )
-                        || $this->matches_any_pattern( $line, $patterns['generic'] );
-        }
-
-        /**
-         * Determine if a line matches any prepared pattern.
-         *
-         * @param string $line      The source line.
-         * @param array  $patterns  List of normalized patterns.
-         *
-         * @return bool
-         */
-        private function matches_any_pattern( string $line, array $patterns ): bool {
-                foreach ( $patterns as $pattern ) {
-                        if ( $pattern['regex'] ) {
-                                $result = @preg_match( $pattern['pattern'], $line ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
-
-                                if ( false !== $result && 1 === $result ) {
-                                        return true;
-                                }
-                        } elseif ( false !== stripos( $line, $pattern['pattern'] ) ) {
-                                return true;
-                        }
-                }
-
-                return false;
-        }
+		return 0 === strpos( $text, $identifier );
+	}
 
 	/**
 	 * Convert lines into wpautop formatted block.
@@ -371,9 +439,48 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 	}
 
 	/**
+	 * Build lesson title using template fallback.
+	 *
+	 * @param string $template            Template supplied by user.
+	 * @param string $module_title        Module title.
+	 * @param int    $module_index        Module index (1-based).
+	 * @param int    $lesson_index        Lesson index within module (1-based).
+	 * @param string $lesson_source_title Lesson heading detected in the document.
+	 *
+	 * @return string
+	 */
+	private function format_lesson_title( string $template, string $module_title, int $module_index, int $lesson_index, string $lesson_source_title ): string {
+		$template = trim( $template );
+
+		if ( '' === $template ) {
+			$template = '%lesson_source_title%';
+		}
+
+		$replacements = array(
+			'%module_title%'        => $module_title,
+			'%module_index%'        => (string) $module_index,
+			'%lesson_index%'        => (string) $lesson_index,
+			'%lesson_source_title%' => $lesson_source_title,
+		);
+
+		$title = strtr( $template, $replacements );
+		$title = trim( $title );
+
+		if ( '' === $title ) {
+			$title = $module_title . ' - ' . sprintf(
+				/* translators: 1: lesson index */
+				__( 'Lesson %d', 'masterstudy-lms-content-importer' ),
+				$lesson_index
+			);
+		}
+
+		return $title;
+	}
+
+	/**
 	 * Parse quiz data from module lines.
 	 *
-	 * @param array  $lines Lines located after the Test heading.
+	 * @param array  $lines        Lines located after the Test heading.
 	 * @param string $module_title Module title for quiz naming.
 	 *
 	 * @return array
@@ -452,16 +559,16 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 	/**
 	 * Parse question block into structured question.
 	 *
-	 * @param array       $lines Question block lines.
+	 * @param array       $lines                   Question block lines.
 	 * @param string|null $fallback_correct_letter Fallback correct answer letter.
 	 *
 	 * @return array|null
 	 */
 	private function build_question( array $lines, ?string $fallback_correct_letter ): ?array {
-		$question_parts  = array();
-		$options         = array();
-		$current_option  = null;
-		$correct_letter  = $fallback_correct_letter;
+		$question_parts = array();
+		$options        = array();
+		$current_option = null;
+		$correct_letter = $fallback_correct_letter;
 
 		foreach ( $lines as $line ) {
 			$trimmed = ltrim( $line );
@@ -472,7 +579,8 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 			}
 
 			if ( preg_match( '/^Question\s*\d+[:\.]?\s*(.*)$/i', $trimmed, $match ) ) {
-				$question_parts[] = '' !== $match[1] ? $match[1] : $trimmed;
+				$content = '' !== $match[1] ? $match[1] : $trimmed;
+				$question_parts[] = $content;
 				continue;
 			}
 
@@ -527,7 +635,7 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 	/**
 	 * Convert results lines into a map question_number => correct_letter.
 	 *
-	 * @param array $lines Result lines.
+	 * @param array $lines          Result lines.
 	 * @param int   $question_count Parsed question count.
 	 *
 	 * @return array<int, string>
@@ -574,4 +682,3 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 		return $map;
 	}
 }
-
