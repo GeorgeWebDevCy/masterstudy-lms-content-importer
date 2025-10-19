@@ -154,8 +154,12 @@ class Masterstudy_Lms_Content_Importer_Importer {
 	 *
 	 * @throws RuntimeException When course cannot be created.
 	 */
-	private function create_course( string $title, string $description, int $author_id, string $status ): int {
-		$slug = sanitize_title( $title );
+       private function create_course( string $title, string $description, int $author_id, string $status ): int {
+               if ( function_exists( 'wp_kses_post' ) ) {
+                       $description = wp_kses_post( $description );
+               }
+
+               $slug = sanitize_title( $title );
 
 		if ( '' === $slug ) {
 			$slug = 'imported-course-' . wp_generate_password( 6, false );
@@ -164,7 +168,7 @@ class Masterstudy_Lms_Content_Importer_Importer {
 		$postarr = array(
 			'post_author'  => $author_id,
 			'post_title'   => $title,
-			'post_content' => $description,
+                       'post_content' => $description,
 			'post_status'  => $status,
 			'post_type'    => 'stm-courses',
 			'post_name'    => $slug,

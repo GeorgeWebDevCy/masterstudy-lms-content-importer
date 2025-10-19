@@ -34,7 +34,16 @@ if ( ! function_exists( 'wpautop' ) ) {
 
 if ( ! function_exists( 'wp_kses_post' ) ) {
     function wp_kses_post( string $text ): string {
-        return $text;
+        $text = preg_replace( '/<script\b[^>]*>(.*?)<\/script>/is', '', $text );
+
+        if ( null === $text ) {
+            $text = '';
+        }
+
+        return strip_tags(
+            $text,
+            '<p><br><a><img><strong><em><ul><ol><li><blockquote><code>'
+        );
     }
 }
 
@@ -60,6 +69,13 @@ function assert_contains( string $needle, string $haystack, string $message ): v
     }
 }
 
+function assert_not_contains( string $needle, string $haystack, string $message ): void {
+    if ( false !== strpos( $haystack, $needle ) ) {
+        fwrite( STDERR, "Assertion failed: {$message}\nUnexpected needle: {$needle}\nHaystack: {$haystack}\n" );
+        exit( 1 );
+    }
+}
+
 $raw_url_result = $method->invoke( $parser, array( 'https://example.com/resource' ) );
 assert_same( '<p>https://example.com/resource</p>', $raw_url_result, 'Standalone URLs should remain raw for auto-embed.' );
 
@@ -73,5 +89,18 @@ assert_contains( $anchor_line, $anchor_result, 'Anchor tags should remain untouc
 $composite_result = $method->invoke( $parser, array( 'Intro text', 'https://vimeo.com/12345' ) );
 assert_contains( '<p>Intro text</p>', $composite_result, 'Non-URL lines should remain as paragraphs.' );
 assert_contains( '[embed]https://vimeo.com/12345[/embed]', $composite_result, 'Vimeo URLs should be wrapped in embed shortcodes.' );
+
+$sanitized_result = $method->invoke(
+    $parser,
+    array(
+        '<script>alert("x")</script>',
+        '<img src="https://example.com/image.jpg" alt="Example" />',
+        '<a href="https://example.com">Example Link</a>',
+    )
+);
+
+assert_not_contains( '<script', $sanitized_result, 'Script tags should be stripped from the output.' );
+assert_contains( '<img src="https://example.com/image.jpg" alt="Example" />', $sanitized_result, 'Images should remain in the sanitized output.' );
+assert_contains( '<a href="https://example.com">Example Link</a>', $sanitized_result, 'Anchor tags should remain after sanitization.' );
 
 fwrite( STDOUT, "All format_block tests passed.\n" );
