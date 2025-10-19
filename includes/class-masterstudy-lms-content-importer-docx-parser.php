@@ -616,6 +616,7 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
         private function collect_run_tokens( DOMElement $run, DOMXPath $xpath ): array {
                 $tokens      = array();
                 $text_buffer = '';
+                $formatting  = $this->extract_run_formatting( $run );
 
                 foreach ( $run->childNodes as $child ) {
                         if ( ! $child instanceof DOMElement ) {
@@ -630,8 +631,9 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
                         if ( self::WP_NS === $child->namespaceURI && 'drawing' === $child->localName ) {
                                 if ( '' !== $text_buffer ) {
                                         $tokens[]   = array(
-                                                'type' => 'text',
-                                                'text' => $text_buffer,
+                                                'type'       => 'text',
+                                                'text'       => $text_buffer,
+                                                'formatting' => $formatting,
                                         );
                                         $text_buffer = '';
                                 }
@@ -647,8 +649,9 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 
                         if ( '' !== $text_buffer ) {
                                 $tokens[]   = array(
-                                        'type' => 'text',
-                                        'text' => $text_buffer,
+                                        'type'       => 'text',
+                                        'text'       => $text_buffer,
+                                        'formatting' => $formatting,
                                 );
                                 $text_buffer = '';
                         }
@@ -660,15 +663,17 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
                         }
 
                         $tokens[] = array(
-                                'type' => 'text',
-                                'text' => $text,
+                                'type'       => 'text',
+                                'text'       => $text,
+                                'formatting' => $formatting,
                         );
                 }
 
                 if ( '' !== $text_buffer ) {
                         $tokens[] = array(
-                                'type' => 'text',
-                                'text' => $text_buffer,
+                                'type'       => 'text',
+                                'text'       => $text_buffer,
+                                'formatting' => $formatting,
                         );
                 }
 
@@ -677,8 +682,9 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 
                         if ( '' !== $text ) {
                                 $tokens[] = array(
-                                        'type' => 'text',
-                                        'text' => $text,
+                                        'type'       => 'text',
+                                        'text'       => $text,
+                                        'formatting' => $formatting,
                                 );
                         }
                 }
@@ -686,6 +692,112 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
                 return $tokens;
         }
 
+        /**
+         * Extract formatting attributes for a run element.
+         *
+         * @param DOMElement $run Run element to inspect.
+         *
+         * @return array{bold:bool,italic:bool,underline:bool,strikethrough:bool,superscript:bool,subscript:bool}
+         */
+        private function extract_run_formatting( DOMElement $run ): array {
+                $formatting = array(
+                        'bold'          => false,
+                        'italic'        => false,
+                        'underline'     => false,
+                        'strikethrough' => false,
+                        'superscript'   => false,
+                        'subscript'     => false,
+                );
+
+                $properties_nodes = $run->getElementsByTagNameNS( self::WP_NS, 'rPr' );
+
+                if ( 0 === $properties_nodes->length ) {
+                        return $formatting;
+                }
+
+                /** @var DOMElement $properties */
+                $properties = $properties_nodes->item( 0 );
+
+                $formatting['bold']      = $this->is_run_property_enabled( $properties, 'b' ) || $this->is_run_property_enabled( $properties, 'bCs' );
+                $formatting['italic']    = $this->is_run_property_enabled( $properties, 'i' ) || $this->is_run_property_enabled( $properties, 'iCs' );
+                $formatting['underline'] = $this->is_run_property_enabled( $properties, 'u', array( 'none', 'off', '0' ) );
+                $formatting['strikethrough'] = $this->is_run_property_enabled( $properties, 'strike' );
+
+                $alignment = $this->detect_run_vertical_alignment( $properties );
+
+                if ( 'superscript' === $alignment ) {
+                        $formatting['superscript'] = true;
+                }
+
+                if ( 'subscript' === $alignment ) {
+                        $formatting['subscript'] = true;
+                }
+
+                return $formatting;
+        }
+
+        /**
+         * Check whether a formatting property is enabled on the run properties node.
+         *
+         * @param DOMElement $properties Run properties element.
+         * @param string     $tag        Property tag name (without namespace).
+         * @param array      $disabled   Optional values that disable the property when matched.
+         *
+         * @return bool
+         */
+        private function is_run_property_enabled( DOMElement $properties, string $tag, array $disabled = array( '0', 'false', 'off' ) ): bool {
+                $nodes = $properties->getElementsByTagNameNS( self::WP_NS, $tag );
+
+                if ( 0 === $nodes->length ) {
+                        return false;
+                }
+
+                /** @var DOMElement $node */
+                foreach ( $nodes as $node ) {
+                        $value = $node->getAttributeNS( self::WP_NS, 'val' );
+
+                        if ( '' === $value ) {
+                                return true;
+                        }
+
+                        $normalized = strtolower( $value );
+
+                        if ( ! in_array( $normalized, $disabled, true ) ) {
+                                return true;
+                        }
+                }
+
+                return false;
+        }
+
+        /**
+         * Detect superscript or subscript alignment from run properties.
+         *
+         * @param DOMElement $properties Run properties element.
+         *
+         * @return string
+         */
+        private function detect_run_vertical_alignment( DOMElement $properties ): string {
+                $nodes = $properties->getElementsByTagNameNS( self::WP_NS, 'vertAlign' );
+
+                if ( 0 === $nodes->length ) {
+                        return '';
+                }
+
+                /** @var DOMElement $node */
+                $node  = $nodes->item( 0 );
+                $value = strtolower( $node->getAttributeNS( self::WP_NS, 'val' ) );
+
+                if ( '' === $value ) {
+                        return '';
+                }
+
+                if ( in_array( $value, array( 'superscript', 'subscript' ), true ) ) {
+                        return $value;
+                }
+
+                return '';
+        }
         /**
          * Retrieve textual content from a node.
          *
@@ -711,56 +823,104 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
         *
         * @return string
         */
-        private function build_paragraph_html( array $tokens ): string {
-                if ( empty( $tokens ) ) {
-                        return '';
-                }
+	private function build_paragraph_html( array $tokens ): string {
+		if ( empty( $tokens ) ) {
+			return '';
+		}
 
-                $fragments = array();
-                $count     = count( $tokens );
+		$fragments = array();
+		$count     = count( $tokens );
 
-                foreach ( $tokens as $index => $token ) {
-                        if ( 'image' === ( $token['type'] ?? '' ) ) {
-                                if ( empty( $token['placeholder'] ) ) {
-                                        continue;
-                                }
+		foreach ( $tokens as $index => $token ) {
+			if ( 'image' === ( $token['type'] ?? '' ) ) {
+				if ( empty( $token['placeholder'] ) ) {
+					continue;
+				}
 
-                                $fragments[] = $token['placeholder'];
-                                continue;
-                        }
+				$fragments[] = $token['placeholder'];
+				continue;
+			}
 
-                        if ( empty( $token['text'] ) ) {
-                                continue;
-                        }
+			if ( empty( $token['text'] ) ) {
+				continue;
+			}
 
-                        $segment = $this->normalize_text_segment( $token['text'], 0 === $index, $index === $count - 1 );
+			$segment = $this->normalize_text_segment( $token['text'], 0 === $index, $index === $count - 1 );
 
-                       if ( '' === $segment ) {
-                               continue;
-                       }
+			if ( '' === $segment ) {
+				continue;
+			}
 
-                       if ( 'hyperlink' === $token['type'] ) {
-                               $href = $token['href'] ?? '';
+			$escaped_segment   = $this->escape_html( $segment );
+			$formatted_segment = $this->apply_inline_formatting(
+				$escaped_segment,
+				$token['formatting'] ?? array()
+			);
 
-                               if ( '' === $href ) {
-                                       $fragments[] = $this->escape_html( $segment );
-                                       continue;
-                               }
+			if ( 'hyperlink' === $token['type'] ) {
+				$href = $token['href'] ?? '';
 
-                               $fragments[] = sprintf(
-                                       '<a href="%s">%s</a>',
-                                       $this->escape_url( $href ),
-                                       $this->escape_html( $segment )
-                               );
+				if ( '' === $href ) {
+					$fragments[] = $formatted_segment;
+					continue;
+				}
 
-                               continue;
-                       }
+				$fragments[] = sprintf(
+					'<a href="%s">%s</a>',
+					$this->escape_url( $href ),
+					$formatted_segment
+				);
 
-                        $fragments[] = $this->escape_html( $segment );
-                }
+				continue;
+			}
 
-                return trim( implode( '', $fragments ) );
-        }
+			$fragments[] = $formatted_segment;
+		}
+
+		return trim( implode( '', $fragments ) );
+	}
+
+	/**
+	 * Apply inline formatting wrappers to an escaped text segment.
+	 *
+	 * @param string $escaped_text Escaped text ready for HTML output.
+	 * @param array  $formatting   Formatting flags collected from the run.
+	 *
+	 * @return string
+	 */
+	private function apply_inline_formatting( string $escaped_text, array $formatting ): string {
+		if ( '' === $escaped_text ) {
+			return $escaped_text;
+		}
+
+		$formatted = $escaped_text;
+
+		if ( ! empty( $formatting['bold'] ) ) {
+			$formatted = '<strong>' . $formatted . '</strong>';
+		}
+
+		if ( ! empty( $formatting['italic'] ) ) {
+			$formatted = '<em>' . $formatted . '</em>';
+		}
+
+		if ( ! empty( $formatting['underline'] ) ) {
+			$formatted = '<u>' . $formatted . '</u>';
+		}
+
+		if ( ! empty( $formatting['strikethrough'] ) ) {
+			$formatted = '<del>' . $formatted . '</del>';
+		}
+
+		if ( ! empty( $formatting['superscript'] ) ) {
+			$formatted = '<sup>' . $formatted . '</sup>';
+		}
+
+		if ( ! empty( $formatting['subscript'] ) ) {
+			$formatted = '<sub>' . $formatted . '</sub>';
+		}
+
+		return $formatted;
+	}
 
         /**
          * Create an image token from a drawing node.
