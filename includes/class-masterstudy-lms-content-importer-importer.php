@@ -197,11 +197,12 @@ class Masterstudy_Lms_Content_Importer_Importer {
 
 		foreach ( $modules as $module_index => $module ) {
 			$section_order++;
+			$module_title = $this->ensure_numbered_module_title( $module['title'] ?? '', $module_index + 1 );
 
 			$section = $section_repository->create(
 				array(
 					'course_id' => $course_id,
-					'title'     => $module['title'],
+					'title'     => $module_title,
 					'order'     => $section_order,
 				)
 			);
@@ -214,27 +215,27 @@ class Masterstudy_Lms_Content_Importer_Importer {
 
 			if ( empty( $lessons ) ) {
 				$lessons[] = array(
-					'title'   => $this->format_lesson_title( $lesson_title_template, $module['title'], $module_index + 1, 1, '' ),
+					'title'   => $this->format_lesson_title( $lesson_title_template, $module_title, $module_index + 1, 1, '' ),
 					'content' => '',
 				);
 			}
 
 			foreach ( $lessons as $lesson_index => $lesson ) {
-				$title = isset( $lesson['title'] ) ? trim( $lesson['title'] ) : '';
+					$title = isset( $lesson['title'] ) ? trim( $lesson['title'] ) : '';
 
-				if ( '' === $title ) {
-					$title = $this->format_lesson_title(
-						$lesson_title_template,
-						$module['title'],
-						$module_index + 1,
-						$lesson_index + 1,
-						''
-					);
-				}
+					if ( '' === $title ) {
+						$title = $this->format_lesson_title(
+							$lesson_title_template,
+							$module_title,
+							$module_index + 1,
+							$lesson_index + 1,
+							''
+						);
+					}
 
-				$lesson_id = $lesson_repository->create(
-					array(
-						'title'   => $title,
+					$lesson_id = $lesson_repository->create(
+						array(
+							'title'   => $title,
 						'content' => $lesson['content'] ?? '',
 						'type'    => LessonType::TEXT,
 					)
@@ -249,6 +250,9 @@ class Masterstudy_Lms_Content_Importer_Importer {
 			}
 
 			$quiz_data = $module['quiz'];
+			if ( empty( $quiz_data['title'] ) ) {
+				$quiz_data['title'] = $module_title;
+			}
 
 			if ( empty( $quiz_data['questions'] ) ) {
 				continue;
@@ -301,6 +305,37 @@ class Masterstudy_Lms_Content_Importer_Importer {
 	}
 
 	/**
+	 * Ensure module titles include numbering.
+	 *
+	 * @param string $title        Raw module title.
+	 * @param int    $module_index Module index (1-based).
+	 *
+	 * @return string
+	 */
+	private function ensure_numbered_module_title( string $title, int $module_index ): string {
+		$title = trim( $title );
+
+		if ( '' === $title ) {
+			return sprintf(
+				/* translators: %s: module index */
+				__( 'Module %d', 'masterstudy-lms-content-importer' ),
+				$module_index
+			);
+		}
+
+		if ( preg_match( '/module\\s+\\d+/i', $title ) ) {
+			return $title;
+		}
+
+		return sprintf(
+			/* translators: 1: module index, 2: module title */
+			__( 'Module %1$d: %2$s', 'masterstudy-lms-content-importer' ),
+			$module_index,
+			$title
+		);
+	}
+
+	/**
 	 * Build a fallback lesson title from template tokens.
 	 *
 	 * @param string $template            Template string.
@@ -325,18 +360,22 @@ class Masterstudy_Lms_Content_Importer_Importer {
 			'%lesson_source_title%' => $lesson_source_title,
 		);
 
-		$title = strtr( $template, $replacements );
-		$title = trim( $title );
+		$title  = trim( strtr( $template, $replacements ) );
+		$prefix = sprintf(
+			/* translators: 1: module index, 2: lesson index */
+			__( 'Lesson %1$d.%2$d', 'masterstudy-lms-content-importer' ),
+			$module_index,
+			$lesson_index
+		);
 
 		if ( '' === $title ) {
-			$title = $module_title . ' - ' . sprintf(
-				/* translators: 1: lesson index */
-				__( 'Lesson %d', 'masterstudy-lms-content-importer' ),
-				$lesson_index
-			);
+			return $prefix;
 		}
 
-		return $title;
+		if ( stripos( $title, $prefix ) === 0 ) {
+			return $title;
+		}
+
+		return $prefix . ' ' . $title;
 	}
 }
-

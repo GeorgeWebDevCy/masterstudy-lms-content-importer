@@ -132,8 +132,12 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 				}
 			}
 
-			if ( null === $lesson_template && $this->matches_identifier( $text, $options['lesson_identifier'] ) ) {
-				$lesson_template = $text;
+			if ( null === $lesson_template ) {
+				if ( $this->matches_identifier( $text, $options['lesson_identifier'] ) ) {
+					$lesson_template = $text;
+				} elseif ( $this->is_heading_style( $style ) ) {
+					$lesson_template = $text;
+				}
 			}
 
 			if ( null !== $lesson_template ) {
@@ -192,7 +196,7 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 		if ( '' === $title ) {
 			$title = $this->format_lesson_title(
 				$lesson_title_template,
-				$module['title'],
+				$this->format_module_title( $module['title'], $module['module_index'] ),
 				$module['module_index'],
 				$lesson_index,
 				$lesson['source_title']
@@ -216,13 +220,14 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 	 * @return array
 	 */
 	private function finalize_module( array $module, string $lesson_title_template ): array {
-		$lessons = $module['lessons'];
+		$module_title = $this->format_module_title( $module['title'], $module['module_index'] );
+		$lessons      = $module['lessons'];
 
 		if ( empty( $lessons ) ) {
 			$lessons[] = array(
 				'title'   => $this->format_lesson_title(
 					$lesson_title_template,
-					$module['title'],
+					$module_title,
 					$module['module_index'],
 					1,
 					''
@@ -231,13 +236,24 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 			);
 		}
 
-		$quiz = $this->parse_quiz( $module['quiz_lines'] ?? array(), $module['title'] );
+		$quiz = $this->parse_quiz( $module['quiz_lines'] ?? array(), $module_title );
 
 		return array(
-			'title'   => $module['title'],
+			'title'   => $module_title,
 			'lessons' => $lessons,
 			'quiz'    => $quiz,
 		);
+	}
+
+	/**
+	 * Determine whether a paragraph style represents a heading level.
+	 *
+	 * @param string $style Paragraph style.
+	 *
+	 * @return bool
+	 */
+	private function is_heading_style( string $style ): bool {
+		return (bool) preg_match( '/^Heading\\d+$/i', $style );
 	}
 
 	/**
@@ -463,18 +479,54 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 			'%lesson_source_title%' => $lesson_source_title,
 		);
 
-		$title = strtr( $template, $replacements );
+		$title  = trim( strtr( $template, $replacements ) );
+		$prefix = sprintf(
+			/* translators: 1: module index, 2: lesson index */
+			__( 'Lesson %1$d.%2$d', 'masterstudy-lms-content-importer' ),
+			$module_index,
+			$lesson_index
+		);
+
+		if ( '' === $title ) {
+			return $prefix;
+		}
+
+		if ( stripos( $title, $prefix ) === 0 ) {
+			return $title;
+		}
+
+		return $prefix . ' ' . $title;
+	}
+
+	/**
+	 * Ensure module titles contain numbering.
+	 *
+	 * @param string $title        Raw module title.
+	 * @param int    $module_index Module index (1-based).
+	 *
+	 * @return string
+	 */
+	private function format_module_title( string $title, int $module_index ): string {
 		$title = trim( $title );
 
 		if ( '' === $title ) {
-			$title = $module_title . ' - ' . sprintf(
-				/* translators: 1: lesson index */
-				__( 'Lesson %d', 'masterstudy-lms-content-importer' ),
-				$lesson_index
+			return sprintf(
+				/* translators: %s: module index */
+				__( 'Module %d', 'masterstudy-lms-content-importer' ),
+				$module_index
 			);
 		}
 
-		return $title;
+		if ( preg_match( '/module\\s+\\d+/i', $title ) ) {
+			return $title;
+		}
+
+		return sprintf(
+			/* translators: 1: module index, 2: module title */
+			__( 'Module %1$d: %2$s', 'masterstudy-lms-content-importer' ),
+			$module_index,
+			$title
+		);
 	}
 
 	/**
