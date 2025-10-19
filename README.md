@@ -5,7 +5,7 @@ Import DOCX course outlines straight into MasterStudy LMS. Upload a Word documen
 ## Key Features
 
 - **Structured import preview** – Upload a `.docx` file and see exactly how the importer mapped modules, lessons, and quizzes before anything is created. Confirm or cancel the import with one click.
-- **Module & lesson detection** – Uses the document table of contents when available. If headings are inconsistent, provide your own module/lesson identifiers (e.g. `Module` or `Lesson`) so the parser knows what to look for.
+- **Module & lesson detection** – Reads the heading hierarchy directly from the Word document (H1 → module, H2/H3 → lessons). Provide optional module/lesson identifiers only when headings are inconsistent.
 - **Numbered hierarchy** – Modules are numbered (`1.`, `2.` …) and each lesson is prefixed with its module/lesson index (`1.1`, `1.2` …) while preserving the original heading text.
 - **Quiz conversion** – "Test" sections are automatically converted to MasterStudy quizzes, keeping all detected questions and attaching the quiz at the end of the corresponding section.
 - **Lesson title templating** – Customize how lesson titles are generated with placeholders such as `%module_index%`, `%lesson_index%`, `%module_title%`, or `%lesson_source_title%`.
@@ -40,4 +40,3 @@ The sample document located at `sample-data/Stress Resilience Curriculum_ALL MOD
 ## License
 
 GPL-2.0-or-later
-

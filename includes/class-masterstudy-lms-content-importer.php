@@ -70,7 +70,7 @@ class Masterstudy_Lms_Content_Importer {
 		if ( defined( 'MASTERSTUDY_LMS_CONTENT_IMPORTER_VERSION' ) ) {
 			$this->version = MASTERSTUDY_LMS_CONTENT_IMPORTER_VERSION;
 		} else {
-			$this->version = '1.8.0';
+			$this->version = '1.12.0';
 		}
 		$this->plugin_name = 'masterstudy-lms-content-importer';
 

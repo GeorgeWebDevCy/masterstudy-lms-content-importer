@@ -44,12 +44,6 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 			throw new RuntimeException( __( 'The document appears to be empty.', 'masterstudy-lms-content-importer' ) );
 		}
 
-		$toc_modules = array();
-
-		if ( ! empty( $options['use_toc'] ) ) {
-			$toc_modules = $this->build_toc_structure( $paragraphs );
-		}
-
 		$course_title    = '';
 		$course_intro    = array();
 		$modules         = array();
@@ -57,22 +51,14 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 		$current_lesson  = null;
 		$collecting_test = false;
 		$module_index    = 0;
-		$module_cursor   = 0;
-
-		$start_page      = max( 1, (int) $options['start_page'] );
-		$current_page    = 1;
+		$start_page = max( 1, (int) $options['start_page'] );
 
 		foreach ( $paragraphs as $paragraph ) {
-			$text  = $paragraph['text'];
-			$style = $paragraph['style'];
+			$style = $paragraph['style'] ?? '';
+			$text  = isset( $paragraph['text'] ) ? trim( $paragraph['text'] ) : '';
+			$page  = $paragraph['page'] ?? 1;
 
-			$current_page = $paragraph['page'];
-
-			if ( $current_page < $start_page ) {
-				continue;
-			}
-
-			if ( '' === $text ) {
+			if ( $page < $start_page || '' === $text ) {
 				continue;
 			}
 
@@ -85,25 +71,27 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 			}
 
 			$normalized_text = $this->normalize_label( $text );
-			$module_template = null;
 
-			if ( isset( $toc_modules[ $module_cursor ] ) && $normalized_text === $toc_modules[ $module_cursor ]['label'] ) {
-				$module_template = $toc_modules[ $module_cursor ];
-				$module_cursor++;
+			$is_module_heading = $this->is_heading( $style, 'Heading1' );
+
+			if ( ! $is_module_heading && '' !== $options['module_identifier'] ) {
+				$identifier = strtolower( $options['module_identifier'] );
+				if ( '' !== $identifier && 0 === strpos( strtolower( $normalized_text ), $identifier ) ) {
+					$is_module_heading = true;
+				}
 			}
 
-			if ( $module_template || $this->matches_identifier( $text, $options['module_identifier'] ) ) {
+			if ( $is_module_heading ) {
+				$this->finalize_current_lesson( $current_module, $current_lesson, $options['lesson_title_template'] );
 				if ( $current_module ) {
-					$this->finalize_current_lesson( $current_module, $current_lesson, $options['lesson_title_template'] );
 					$modules[] = $this->finalize_module( $current_module, $options['lesson_title_template'] );
 				}
 
 				$module_index++;
 
 				$current_module = array(
-					'title'          => $module_template['title'] ?? $text,
-					'label'          => $module_template['label'] ?? $this->normalize_label( $text ),
-					'lesson_queue'   => $module_template['lessons'] ?? array(),
+					'title'          => $text,
+					'label'          => $normalized_text,
 					'lessons'        => array(),
 					'lesson_counter' => 0,
 					'module_index'   => $module_index,
@@ -121,10 +109,32 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 				continue;
 			}
 
-			if ( preg_match( '/^Test\b/i', $text ) ) {
+			$is_heading_two   = $this->is_heading( $style, 'Heading2' );
+			$is_heading_three = $this->is_heading( $style, 'Heading3' );
+			$is_lesson_heading = $is_heading_two || $is_heading_three;
+
+			if ( ! $is_lesson_heading && '' !== $options['lesson_identifier'] ) {
+				if ( false !== stripos( $normalized_text, strtolower( $options['lesson_identifier'] ) ) ) {
+					$is_lesson_heading = true;
+				}
+			}
+
+			if ( $is_lesson_heading ) {
+				if ( preg_match( '/^test\b/i', $text ) ) {
+					$this->finalize_current_lesson( $current_module, $current_lesson, $options['lesson_title_template'] );
+					$current_module['quiz_heading'] = $text;
+					$collecting_test                = true;
+					continue;
+				}
+
 				$this->finalize_current_lesson( $current_module, $current_lesson, $options['lesson_title_template'] );
-				$current_module['quiz_heading'] = $text;
-				$collecting_test = true;
+
+				$current_lesson = array(
+					'title'        => '',
+					'source_title' => $text,
+					'content_lines'=> array(),
+				);
+				$collecting_test = false;
 				continue;
 			}
 
@@ -133,43 +143,11 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 				continue;
 			}
 
-			$lesson_template = null;
-
-			if ( ! empty( $current_module['lesson_queue'] ) ) {
-				$next_lesson = $current_module['lesson_queue'][0];
-
-				if ( $normalized_text === $next_lesson['label'] ) {
-					array_shift( $current_module['lesson_queue'] );
-					$lesson_template = $next_lesson['title'];
-				}
-			}
-
-			if ( null === $lesson_template ) {
-				if ( $this->matches_identifier( $text, $options['lesson_identifier'] ) ) {
-					$lesson_template = $text;
-				} elseif ( $this->is_heading_style( $style ) ) {
-					$lesson_template = $text;
-				}
-			}
-
-			if ( null !== $lesson_template ) {
-				$this->finalize_current_lesson( $current_module, $current_lesson, $options['lesson_title_template'] );
-
-				$current_lesson = array(
-					'title'        => '',
-					'source_title' => $lesson_template,
-					'content_lines'=> array(),
-					'explicit'     => true,
-				);
-				continue;
-			}
-
-			if ( ! $current_lesson ) {
+			if ( null === $current_lesson ) {
 				$current_lesson = array(
 					'title'        => '',
 					'source_title' => '',
 					'content_lines'=> array(),
-					'explicit'     => false,
 				);
 			}
 
@@ -288,17 +266,6 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 		}
 
 		return sprintf( '%s %s', $module_title, __( 'Quiz', 'masterstudy-lms-content-importer' ) );
-	}
-
-	/**
-	 * Determine whether a paragraph style represents a heading level.
-	 *
-	 * @param string $style Paragraph style.
-	 *
-	 * @return bool
-	 */
-	private function is_heading_style( string $style ): bool {
-		return (bool) preg_match( '/^Heading\\d+$/i', $style );
 	}
 
 	/**
@@ -441,6 +408,18 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 	}
 
 	/**
+	 * Check if style matches a specific heading level.
+	 *
+	 * @param string $style  Paragraph style.
+	 * @param string $target Target heading (e.g. Heading1).
+	 *
+	 * @return bool
+	 */
+	private function is_heading( string $style, string $target ): bool {
+		return '' !== $style && 0 === strcasecmp( $style, $target );
+	}
+
+	/**
 	 * Cleanup TOC entry removing dot leaders and page numbers.
 	 *
 	 * @param string $title Raw TOC title.
@@ -466,25 +445,6 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 		$text = strtolower( $text );
 
 		return preg_replace( '/\s+/', ' ', trim( $text ) );
-	}
-
-	/**
-	 * Determine if text matches identifier prefix.
-	 *
-	 * @param string $text       Paragraph text.
-	 * @param string $identifier Identifier provided by user.
-	 *
-	 * @return bool
-	 */
-	private function matches_identifier( string $text, string $identifier ): bool {
-		if ( '' === $identifier ) {
-			return false;
-		}
-
-		$text       = $this->normalize_label( $text );
-		$identifier = strtolower( trim( $identifier ) );
-
-		return 0 === strpos( $text, $identifier );
 	}
 
 	/**

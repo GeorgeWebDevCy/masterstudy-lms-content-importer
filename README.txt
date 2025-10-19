@@ -4,7 +4,7 @@ Donate link: https://www.georgenicolaou.me/
 Tags: lms, masterstudy, course import, docx, education
 Requires at least: 5.8
 Tested up to: 6.5
-Stable tag: 1.11.0
+Stable tag: 1.12.0
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -17,7 +17,7 @@ MasterStudy LMS Content Importer lets you turn a Word document curriculum into a
 **Highlights**
 
 * Structured preview of modules, lessons, and quiz counts before anything is created.
-* Uses the document table of contents when available, with manual fallback patterns for headings.
+* Uses the document heading hierarchy (H1 → modules, H2/H3 → lessons), with optional identifier patterns for unusual structures.
 * Automatically numbers modules (`1.`, `2.` …) and lesson titles (`1.1`, `1.2` …) while retaining their original headings.
 * Converts "Test" sections into MasterStudy quizzes, preserving the parsed questions.
 * Lesson title templating with placeholders such as `%module_index%`, `%lesson_index%`, `%module_title%`, or `%lesson_source_title%`.
@@ -51,11 +51,11 @@ The importer renames them to quizzes, migrates detected questions, and attaches 
 
 == Changelog ==
 
-= 1.11.0 =
-* Added page skipping support and improved quiz title conversion.
+= 1.12.0 =
+* Detect modules and lessons directly from heading levels without requiring a table of contents.
+* Added page skip option and improved quiz title conversion.
 
 == Upgrade Notice ==
 
-= 1.11.0 =
-Parsing now respects the "Skip pages before" option and converts tests to quizzes—update to keep imports accurate.
-
+= 1.12.0 =
+Parsing now derives modules/lessons from heading levels and respects the "Skip pages before" option—update for accurate imports.
