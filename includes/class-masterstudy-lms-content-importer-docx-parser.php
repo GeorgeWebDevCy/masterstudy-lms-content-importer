@@ -1121,12 +1121,6 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
                        return '';
                }
 
-               $media_reference = $this->convert_media_reference_line( $trimmed );
-
-               if ( null !== $media_reference ) {
-                       return $media_reference;
-               }
-
                if ( '[' === $trimmed[0] ) {
                        return $trimmed;
                }
@@ -1154,52 +1148,6 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
                }
 
                return $trimmed;
-       }
-
-       /**
-        * Convert prefixed media references into embeds.
-        *
-        * @param string $line Trimmed line content.
-        *
-        * @return string|null
-        */
-       private function convert_media_reference_line( string $line ): ?string {
-               if ( '' === $line ) {
-                       return null;
-               }
-
-               $normalized = preg_replace( '/^\s*(?:[\-*]|\p{Pd}|[•·]|\d+\.)\s*/u', '', $line, 1 );
-
-               if ( null === $normalized ) {
-                       $normalized = $line;
-               }
-
-               if ( ! preg_match( '/^(Video|Audio)\s*:(.*)$/i', $normalized, $matches ) ) {
-                       return null;
-               }
-
-               $rest = trim( $matches[2] );
-
-               if ( '' === $rest ) {
-                       return null;
-               }
-
-               if ( ! preg_match( "#(https?://[^\s<>'\"]+)#i", $rest, $url_matches ) ) {
-                       return null;
-               }
-
-               $url = trim( $url_matches[1] );
-               $url = rtrim( $url, '.)' );
-
-               if ( '' === $url ) {
-                       return null;
-               }
-
-               if ( ! $this->should_wrap_embed_shortcode( $url ) ) {
-                       return null;
-               }
-
-               return sprintf( '[embed]%s[/embed]', $url );
        }
 
        /**

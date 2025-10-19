@@ -94,11 +94,6 @@ $composite_result = $method->invoke( $parser, array( 'Intro text', 'https://vime
 assert_contains( '<p>Intro text</p>', $composite_result, 'Non-URL lines should remain as paragraphs.' );
 assert_contains( '[embed]https://vimeo.com/12345[/embed]', $composite_result, 'Vimeo URLs should be wrapped in embed shortcodes.' );
 
-$video_reference_line   = '– Video: "The Importance of Self-Care for Teachers" (YouTube) : https://www.youtube.com/watch?v=5O5QIqlDxjg';
-$video_reference_result = $method->invoke( $parser, array( $video_reference_line ) );
-assert_contains( '[embed]https://www.youtube.com/watch?v=5O5QIqlDxjg[/embed]', $video_reference_result, 'Media reference lines should become embeds.' );
-assert_not_contains( 'Video: "The Importance of Self-Care for Teachers" (YouTube)', $video_reference_result, 'Media reference metadata should be removed from the output.' );
-
 $sanitized_result = $method->invoke(
     $parser,
     array(
