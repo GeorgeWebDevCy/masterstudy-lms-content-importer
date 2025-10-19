@@ -1,0 +1,56 @@
+{
+    "_readme": [
+        "This file locks the dependencies of your project to a known state",
+        "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
+        "This file is @generated automatically"
+    ],
+    "content-hash": "a6074dde90ab1058538799d1193efe58",
+    "packages": [
+        {
+            "name": "content-pilot/wp-plugin-update-checker",
+            "version": "2.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/content-pilot/wp-plugin-update-checker.git",
+                "reference": "e5e54715d8f3e12a1aff3ed640c50c1cb07046fd"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/content-pilot/wp-plugin-update-checker/zipball/e5e54715d8f3e12a1aff3ed640c50c1cb07046fd",
+                "reference": "e5e54715d8f3e12a1aff3ed640c50c1cb07046fd",
+                "shasum": ""
+            },
+            "type": "library",
+            "autoload": {
+                "classmap": [
+                    "."
+                ]
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Content Pilot",
+                    "email": "wordpressdev@contentpilot.com"
+                }
+            ],
+            "description": "Allow third-party, private plugins to be updated from GitHub",
+            "support": {
+                "issues": "https://github.com/content-pilot/wp-plugin-update-checker/issues",
+                "source": "https://github.com/content-pilot/wp-plugin-update-checker/tree/2.0.0"
+            },
+            "time": "2024-05-02T16:05:52+00:00"
+        }
+    ],
+    "packages-dev": [],
+    "aliases": [],
+    "minimum-stability": "stable",
+    "stability-flags": {},
+    "prefer-stable": false,
+    "prefer-lowest": false,
+    "platform": {},
+    "platform-dev": {},
+    "plugin-api-version": "2.6.0"
+}

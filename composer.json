@@ -1,0 +1,5 @@
+{
+    "require": {
+        "content-pilot/wp-plugin-update-checker": "^2.0"
+    }
+}
