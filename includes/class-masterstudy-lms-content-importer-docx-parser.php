@@ -1126,6 +1126,12 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
                }
 
                if ( false !== stripos( $trimmed, '<a ' ) || false !== stripos( $trimmed, '</a>' ) ) {
+                       $anchor_url = $this->extract_anchor_embed_url( $trimmed );
+
+                       if ( null !== $anchor_url && $this->should_wrap_embed_shortcode( $anchor_url ) ) {
+                               return sprintf( '[embed]%s[/embed]', $anchor_url );
+                       }
+
                        return $trimmed;
                }
 
@@ -1193,6 +1199,43 @@ class Masterstudy_Lms_Content_Importer_Docx_Parser {
 
                return in_array( $host, $embed_hosts, true );
        }
+
+	/**
+	 * Extract the URL from an anchor tag if it should be treated as an embed.
+	 *
+	 * @param string $line Anchor markup to inspect.
+	 *
+	 * @return string|null
+	 */
+	private function extract_anchor_embed_url( string $line ): ?string {
+		$trimmed = trim( $line );
+
+		if ( '' === $trimmed ) {
+			return null;
+		}
+
+		if ( 0 !== strpos( $trimmed, '<' ) ) {
+			return null;
+		}
+
+		if ( ! preg_match( '/^<a\\b[^>]*href=("|\')(.*?)\1[^>]*>(.*?)<\/a>$/is', $trimmed, $matches ) ) {
+			return null;
+		}
+
+		$href = trim( $matches[2] );
+
+		if ( '' === $href ) {
+			return null;
+		}
+
+		$inner_text = trim( strip_tags( $matches[3] ) );
+
+		if ( '' !== $inner_text && 0 !== strcasecmp( $inner_text, $href ) ) {
+			return null;
+		}
+
+		return $href;
+	}
 
 	/**
 	 * Build lesson title using template fallback.
